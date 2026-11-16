@@ -1,0 +1,37 @@
+/* 2026-11-15: the mobile cover starts behind the status bar. Keep the same
+   viewport when a profile overlays it, so opening/returning never shifts the feed. */
+.zy-phone-mobile .zy-phone-content:has(main.zy-mobile.zy-page-moments) {
+  inset:0;
+  padding-top:0;
+}
+.zy-phone-mobile main.zy-mobile.zy-page-moments {
+  --zy-m-detail-safe-top:47px;
+}
+html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-moments .zy-moments-cover {
+  height:287px;
+  min-height:287px;
+  margin-bottom:0;
+}
+html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-moments .zy-moments-cover-identity {
+  bottom:18px;
+  align-items:flex-end;
+}
+html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-moments .zy-moments-cover-name {
+  padding-bottom:3px;
+}
+/* A photo-only post gets the same four-pixel separation as the caption in
+   a text post. Captions keep their existing margins. */
+.zy-mobile .zy-post-content>header+.zy-mobile-moment-media {
+  margin-top:4px;
+}
+@media (max-width:600px) {
+  html:not([data-zy-mobile-native='true']) .zy-phone-mobile main.zy-mobile.zy-page-moments {
+    --zy-m-detail-safe-top:env(safe-area-inset-top,0px);
+  }
+  html:not([data-zy-mobile-native='true']) .zy-mobile .zy-mobile-moments-back {
+    top:calc(8px + env(safe-area-inset-top,0px));
+  }
+  html[data-zy-theme]:not([data-zy-mobile-native='true']) .zy-mobile.zy-app.zy-desktop .zy-moments .zy-moments-tools {
+    top:calc(8px + env(safe-area-inset-top,0px));
+  }
+}

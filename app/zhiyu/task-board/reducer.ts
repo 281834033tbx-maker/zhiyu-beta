@@ -1,0 +1,222 @@
+import {createHistoryDay,createMockTaskBoard,shiftMockDate} from './mock';
+import {applyManualTaskRecord,boardShanghaiToday,isBoardDate,parseBoardPlan} from './manual-task-record';
+import type {Task,TaskBoardAction,TaskBoardModel,TaskTimer} from './types';
+
+export const HISTORY_MOCK_LIMIT_DAYS=365;
+export const createInitialTaskBoard=(now=Date.now()):TaskBoardModel=>createMockTaskBoard(now);
+export function createEmptyTaskBoard(today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())):TaskBoardModel {
+  return {version:1,today,tasks:[],plans:[],page:{view:'today',futureRange:7,historyFilter:'all',activeExpanded:false,expandedTaskIds:[],weeklyReview:{time:''}},timers:{},historyLoadedDays:0};
+}
+export const shiftBoardDate=shiftMockDate;
+export const boardSelectedDate=(model:TaskBoardModel)=>model.page.selectedDate||model.today;
+/** Only explicitly authored records can be operated on a selected non-current day. */
+export const canOperateBoardTask=(model:TaskBoardModel,task:Task)=>task.date===boardSelectedDate(model)&&(task.date===model.today||!!task.manualRecord);
+export const boardTimerRemainingSeconds=(timer:TaskTimer|undefined,now:number)=>timer?Math.max(0,Math.ceil((timer.pausedRemainingMs??timer.endsAt-now)/1000)):0;
+function freezeTimer(timer:TaskTimer,now:number):TaskTimer{return timer.pausedRemainingMs!==undefined?timer:{...timer,pausedRemainingMs:Math.max(0,timer.endsAt-now)};}
+function freezeTaskTimers(model:TaskBoardModel,id:string,now:number){return Object.fromEntries(Object.entries(model.timers).map(([key,timer])=>[key,timer.taskId===id?freezeTimer(timer,now):timer]));}
+export const isTaskFinished=(task:Task)=>task.status==='done'||task.status==='ended';
+export function taskStepProgress(task:Task) {
+  const total=task.steps?.length||0,done=task.steps?.filter(step=>step.done).length||0;
+  return {done,total,current:Math.max(0,task.steps?.findIndex(step=>!step.done)??0),percent:total?Math.round(done/total*100):0};
+}
+export function taskProgress(task:Task) {
+  if(task.type==='count'&&task.count) {
+    const done=task.count.current,total=task.count.target;
+    return {done,total,percent:total?Math.min(100,Math.round(done/total*100)):0};
+  }
+  if(task.type==='steps')return taskStepProgress(task);
+  return {done:isTaskFinished(task)?1:0,total:1,percent:isTaskFinished(task)?100:0};
+}
+export function taskMatchesQuery(task:Task,query:string) {
+  const normalized=query.trim().toLocaleLowerCase();
+  if(!normalized)return true;
+  return [task.title,task.amount,task.tip,task.note,...(task.steps||[]).flatMap(step=>[step.name,step.detail,step.actual,...(step.tips||[])])].filter(Boolean).join(' ').toLocaleLowerCase().includes(normalized);
+}
+const timestamp=(now?:number)=>new Date(now??Date.now()).toISOString();
+const removeTaskTimers=(model:TaskBoardModel,id:string)=>Object.fromEntries(Object.entries(model.timers).filter(([,timer])=>timer.taskId!==id));
+const remainingRest=(model:TaskBoardModel,id:string)=>model.rest?.taskId===id?undefined:model.rest;
+function replaceTask(model:TaskBoardModel,id:string,change:(task:Task)=>Task):TaskBoardModel {
+  return {...model,tasks:model.tasks.map(task=>task.id===id?change(task):task)};
+}
+function finish(model:TaskBoardModel,task:Task,now?:number) {
+  const status=task.type==='steps'&&!task.steps?.every(step=>step.done)?'ended':'done';
+  return {...replaceTask(model,task.id,current=>({...current,status,completedAt:timestamp(now)})),rest:remainingRest(model,task.id),timers:removeTaskTimers(model,task.id)};
+}
+function toggleFinished(model:TaskBoardModel,task:Task,now?:number):TaskBoardModel {
+  if(isTaskFinished(task)) {
+    const history=task.date<model.today&&!task.manualRecord;
+    const recorded=history&&task.missText?Number(task.missText.match(/\d+/)?.[0]):NaN;
+    return {...replaceTask(model,task.id,current=>({...current,status:history?'missed':current.type==='steps'&&current.steps?.some(step=>step.done)?'paused':'todo',completedAt:undefined,...(current.count?{count:{...current.count,current:Math.max(0,Number.isFinite(recorded)?Math.min(current.count.target-current.count.perTime,recorded):current.count.target-current.count.perTime)}}:{})})),rest:remainingRest(model,task.id),timers:removeTaskTimers(model,task.id),page:{...model.page,activeTaskId:model.page.activeTaskId===task.id?undefined:model.page.activeTaskId}};
+  }
+  if(task.date<model.today&&!task.manualRecord) {
+    return replaceTask(model,task.id,current=>({...current,status:'done',completedAt:timestamp(now),count:current.count?{...current.count,current:current.count.target}:undefined}));
+  }
+  return task.type==='steps'?finish(model,task,now):replaceTask(model,task.id,current=>({...current,status:'done',completedAt:timestamp(now)}));
+}
+function updateStep(model:TaskBoardModel,task:Task,stepId:string,change:(step:NonNullable<Task['steps']>[number])=>NonNullable<Task['steps']>[number],now?:number) {
+  if(!canOperateBoardTask(model,task)||isTaskFinished(task))return model;
+  const before=task.steps?.find(step=>step.id===stepId);
+  if(!before)return model;
+  const after=change(before);
+  const nextTask={...task,steps:task.steps!.map(step=>step.id===stepId?after:step)};
+  let rest=model.rest;
+  if(model.page.activeTaskId===task.id&&task.status==='in_progress') {
+    const nextStep=nextTask.steps.find(step=>!step.done);
+    const progressed=Number(after.done)>Number(before.done)||(after.sets?.done||0)>(before.sets?.done||0);
+    if(progressed&&nextStep?.restSeconds) rest={taskId:task.id,stepId:nextStep.id,endsAt:(now??Date.now())+nextStep.restSeconds*1000};
+    else if(!nextStep||!progressed)rest=undefined;
+  }
+  const timers=after.done?Object.fromEntries(Object.entries(model.timers).filter(([key])=>key!==`${task.id}:${stepId}`)):model.timers;
+  return {...replaceTask(model,task.id,()=>nextTask),rest,timers};
+}
+export function taskBoardReducer(model:TaskBoardModel,action:TaskBoardAction):TaskBoardModel {
+  switch(action.type) {
+    case 'hydrate': return action.model;
+    case 'reset': return createEmptyTaskBoard(boardShanghaiToday(action.now));
+    case 'set-selected-date': {
+      if(action.date!==undefined&&!isBoardDate(action.date))return model;
+      const date=action.date||model.today,active=model.tasks.find(task=>task.date===date&&task.status==='in_progress');
+      return {...model,page:{...model.page,selectedDate:action.date===model.today?undefined:action.date,activeTaskId:active?.id,expandedStepId:undefined,categoryFilter:undefined}};
+    }
+    case 'import-manual-record':return applyManualTaskRecord(model,action.record,action.now);
+    case 'upsert-plan': {
+      const plan=parseBoardPlan(action.plan),exists=model.plans?.some(current=>current.id===plan.id);
+      return {...model,plans:exists?model.plans!.map(current=>current.id===plan.id?plan:current):[...(model.plans||[]),plan]};
+    }
+    case 'delete-plan':return {...model,plans:(model.plans||[]).filter(plan=>plan.id!==action.planId)};
+    case 'enable-live-import':return model.liveImport||!Number.isFinite(new Date(action.now).getTime())?model:{...model,liveImport:{since:timestamp(action.now)}};
+    case 'import-tasks': {
+      const since=Date.parse(model.liveImport?.since||'');
+      if(!Number.isFinite(since))return model;
+      const keys=new Set(model.tasks.flatMap(task=>task.source?[task.source.key]:[]));
+      const ids=new Set(model.tasks.map(task=>task.id));
+      let order=Math.floor(model.tasks.reduce((largest,task)=>Math.max(largest,task.order,task.appendOrder??-1),-1));
+      const added:Task[]=[];
+      // This is a creation snapshot. Later source revisions must not overwrite
+      // completion, edits or append positions already owned by this board.
+      const candidates=action.tasks.map((task,index)=>({task,index})).sort((a,b)=>Date.parse(a.task.source?.createdAt||'')-Date.parse(b.task.source?.createdAt||'')||a.index-b.index);
+      for(const {task} of candidates) {
+        const source=task.source,createdAt=Date.parse(source?.createdAt||'');
+        if(!source?.key||!['professional','group'].includes(source.kind)||!Number.isFinite(createdAt)||createdAt<since||keys.has(source.key)
+          ||!task.id||task.id.length>128||!/^[a-zA-Z0-9:_-]+$/.test(task.id))continue;
+        let id=task.id,collision=0;
+        // Full provenance keys deduplicate records. A rare short-ID collision
+        // must neither drop a different source nor replace an existing row.
+        while(ids.has(id))id=`${task.id.slice(0,110)}-${++collision}`;
+        order++;
+        added.push({...structuredClone(task),id,date:model.today,order,appendOrder:order,pinned:undefined});
+        keys.add(source.key);ids.add(id);
+      }
+      return added.length?{...model,tasks:[...model.tasks,...added]}:model;
+    }
+    case 'set-view':return {...model,page:{...model.page,view:action.view,categoryFilter:undefined,expandedStepId:undefined}};
+    case 'set-future-range':return {...model,page:{...model.page,futureRange:action.range}};
+    case 'set-history-filter':return {...model,page:{...model.page,historyFilter:action.filter}};
+    case 'set-category':return {...model,page:{...model.page,categoryFilter:model.page.categoryFilter===action.categoryId?undefined:action.categoryId}};
+    case 'toggle-task':return {...model,page:{...model.page,expandedTaskIds:model.page.expandedTaskIds.includes(action.taskId)?model.page.expandedTaskIds.filter(id=>id!==action.taskId):[...model.page.expandedTaskIds,action.taskId]}};
+    case 'toggle-active-expanded':return {...model,page:{...model.page,activeExpanded:!model.page.activeExpanded}};
+    case 'expand-step':return {...model,page:{...model.page,expandedStepId:model.page.expandedStepId===action.stepId?undefined:action.stepId}};
+    case 'load-history': {
+      if(!model.demoOverview)return model;
+      const requested=action.throughDate?Math.ceil((Date.parse(`${model.today}T00:00:00Z`)-Date.parse(`${action.throughDate}T00:00:00Z`))/86400000):model.historyLoadedDays+7;
+      const target=Math.max(model.historyLoadedDays,Math.min(HISTORY_MOCK_LIMIT_DAYS,Number.isFinite(requested)?requested:model.historyLoadedDays+7));
+      if(target===model.historyLoadedDays)return model;
+      const added=Array.from({length:target-model.historyLoadedDays},(_,index)=>createHistoryDay(shiftBoardDate(model.today,-model.historyLoadedDays-index-1))).flat();
+      const ids=new Set(model.tasks.map(task=>task.id));
+      return {...model,historyLoadedDays:target,tasks:[...model.tasks,...added.filter(task=>!ids.has(task.id))]};
+    }
+  }
+  const task=model.tasks.find(item=>item.id===action.taskId);
+  if(!task)return model;
+  switch(action.type) {
+    case 'pin':return canOperateBoardTask(model,task)&&task.appendOrder===undefined?replaceTask(model,task.id,current=>({...current,pinned:!current.pinned})):model;
+    case 'start': {
+      if(task.type!=='steps'||!canOperateBoardTask(model,task)||isTaskFinished(task))return model;
+      const oldId=model.page.activeTaskId;
+      const tasks=model.tasks.map(current=>current.id===task.id?{...current,status:'in_progress' as const}:current.id===oldId&&current.status==='in_progress'?{...current,status:'paused' as const}:current);
+      const first=task.steps?.find(step=>!step.done);
+      const rest:TaskTimer|undefined=first?.restSeconds&&((first.sets?.done||0)>0)?{taskId:task.id,stepId:first.id,endsAt:(action.now??Date.now())+first.restSeconds*1000}:undefined;
+      return {...model,tasks,rest,timers:oldId&&oldId!==task.id?freezeTaskTimers(model,oldId,action.now??Date.now()):model.timers,page:{...model.page,activeTaskId:task.id,activeExpanded:false,expandedStepId:undefined}};
+    }
+    case 'pause': {
+      if(!canOperateBoardTask(model,task)||isTaskFinished(task))return model;
+      const now=action.now??Date.now();
+      return {...replaceTask(model,task.id,current=>({...current,status:'paused'})),timers:freezeTaskTimers(model,task.id,now),rest:model.rest?.taskId===task.id?freezeTimer(model.rest,now):model.rest};
+    }
+    case 'finish':return canOperateBoardTask(model,task)&&!isTaskFinished(task)?finish(model,task,action.now):model;
+    case 'toggle-status': {
+      if(task.date>model.today&&!canOperateBoardTask(model,task))return model;
+      if(task.manualRecord&&!canOperateBoardTask(model,task))return model;
+      if(task.type==='count'&&!isTaskFinished(task)&&canOperateBoardTask(model,task))return taskBoardReducer(model,{type:'increment-count',taskId:task.id,now:action.now});
+      return toggleFinished(model,task,action.now);
+    }
+    case 'increment-count':
+    case 'complete-count': {
+      if(task.type!=='count'||!task.count||!canOperateBoardTask(model,task)||isTaskFinished(task))return model;
+      const current=action.type==='complete-count'?task.count.target:Math.min(task.count.target,task.count.current+task.count.perTime);
+      const done=current>=task.count.target;
+      return replaceTask(model,task.id,value=>({...value,count:{...value.count!,current},status:done?'done':'todo',completedAt:done?timestamp(action.now):undefined}));
+    }
+    case 'toggle-step':return updateStep(model,task,action.stepId,step=>({...step,done:!step.done,sets:step.sets?{...step.sets,done:step.done?0:step.sets.total}:undefined}),action.now);
+    case 'set-step-set':return updateStep(model,task,action.stepId,step=>{
+      if(!step.sets)return step;
+      const index=Math.max(0,Math.min(step.sets.total-1,Math.trunc(action.index)));
+      const done=index<step.sets.done?index:index+1;
+      return {...step,sets:{...step.sets,done},done:done===step.sets.total};
+    },action.now);
+    case 'start-timer': {
+      const step=task.steps?.find(item=>item.id===action.stepId);
+      if(!canOperateBoardTask(model,task)||isTaskFinished(task)||task.status==='paused'||!step?.timerSeconds||step.done||step.skipped)return model;
+      const key=`${task.id}:${step.id}`;
+      if(model.timers[key]&&(model.timers[key].pausedRemainingMs!==undefined||model.timers[key].endsAt>(action.now??Date.now())))return model;
+      return {...model,timers:{...model.timers,[key]:{taskId:task.id,stepId:step.id,endsAt:(action.now??Date.now())+step.timerSeconds*1000}}};
+    }
+    case 'pause-timer':
+    case 'resume-timer': {
+      const key=`${task.id}:${action.stepId}`,timer=model.timers[key],step=task.steps?.find(item=>item.id===action.stepId),now=action.now??Date.now();
+      if(!canOperateBoardTask(model,task)||isTaskFinished(task)||!timer||!step||step.done||step.skipped)return model;
+      if(action.type==='resume-timer'&&(timer.pausedRemainingMs===undefined||task.status==='paused'))return model;
+      const next=action.type==='pause-timer'?freezeTimer(timer,now):{taskId:timer.taskId,stepId:timer.stepId,endsAt:now+timer.pausedRemainingMs!};
+      return {...model,timers:{...model.timers,[key]:next}};
+    }
+  }
+}
+
+export function futureOverview(model:TaskBoardModel) {
+  const end=shiftBoardDate(model.today,model.page.futureRange);
+  if(!model.demoOverview)return model.tasks.filter(task=>task.date>model.today&&task.date<=end).length;
+  const extras=model.tasks.filter(task=>task.date>shiftBoardDate(model.today,7)&&task.date<=end);
+  return model.demoOverview.futureCount7+(model.page.futureRange===30?extras.length:0);
+}
+export function historyCompletionDelta(model:TaskBoardModel,categoryId?:string) {
+  if(!model.demoOverview)return 0;
+  const month=model.demoOverview.calendar.month;
+  let delta=0;
+  for(const task of model.tasks)if(task.date.startsWith(`${month}-`)&&(!categoryId||task.categoryId===categoryId)) {
+    const baseline=createHistoryDay(task.date).find(item=>item.id===task.id);
+    if(baseline)delta+=Number(isTaskFinished(task))-Number(isTaskFinished(baseline));
+  }
+  return delta;
+}
+export function historyOverview(model:TaskBoardModel,month=model.demoOverview?.calendar.month||model.today.slice(0,7)) {
+  if(model.demoOverview&&month===model.demoOverview.calendar.month)return Math.max(0,model.demoOverview.historyDone+historyCompletionDelta(model));
+  return model.tasks.filter(task=>task.date<model.today&&task.date.startsWith(`${month}-`)&&isTaskFinished(task)).length;
+}
+export function categoryOverview(model:TaskBoardModel,categoryId:string,historyMonth?:string) {
+  if(model.page.view==='today')return model.tasks.filter(task=>task.date===model.today&&task.categoryId===categoryId).length;
+  if(model.page.view==='history') {
+    const month=historyMonth||model.demoOverview?.calendar.month||model.today.slice(0,7);
+    if(model.demoOverview&&month===model.demoOverview.calendar.month)return Math.max(0,(model.demoOverview.categoryCounts.history[categoryId]||0)+historyCompletionDelta(model,categoryId));
+    return model.tasks.filter(task=>task.date<model.today&&task.date.startsWith(`${month}-`)&&task.categoryId===categoryId&&isTaskFinished(task)).length;
+  }
+  if(!model.demoOverview) {
+    return model.tasks.filter(task=>task.date>model.today&&task.date<=shiftBoardDate(model.today,model.page.futureRange)&&task.categoryId===categoryId).length;
+  }
+  const extra=model.page.futureRange===30?model.tasks.filter(task=>task.categoryId===categoryId&&task.date>shiftBoardDate(model.today,7)&&task.date<=shiftBoardDate(model.today,30)).length:0;
+  return (model.demoOverview.categoryCounts.future[categoryId]||0)+extra;
+}
+export function todayTasks(model:TaskBoardModel) {return model.tasks.filter(task=>task.date===model.today);}
+export function todayProgress(model:TaskBoardModel) {
+  const tasks=todayTasks(model),done=tasks.filter(isTaskFinished).length,total=tasks.length;
+  return {done,total,pending:total-done};
+}

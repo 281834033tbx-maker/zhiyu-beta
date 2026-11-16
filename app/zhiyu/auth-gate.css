@@ -1,0 +1,66 @@
+/* The whole login is one reflective card. Colour roles share the existing directory palette. */
+.zy-auth-stage {
+  --zy-auth-teal:var(--zy-directory-tone-start);
+  --zy-auth-middle:var(--zy-directory-tone-middle);
+  --zy-auth-lilac:var(--zy-directory-tone-end);
+  min-height:100dvh; box-sizing:border-box; display:grid; place-items:center;
+  padding:24px; background:transparent; font-family:'PingFang SC','Microsoft YaHei',sans-serif; color:var(--zy-auth-ink);
+}
+.zy-auth-card { position:relative; box-sizing:border-box; width:100%; height:100%; min-height:0; display:flex; align-items:stretch; flex-direction:column; padding:24px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+.zy-auth-brand { display:flex; flex:none; align-items:center; gap:9px; font-size:calc(20px + var(--zy-font-adjust,0px)); font-weight:600; letter-spacing:2px; -webkit-app-region:drag; }
+.zy-auth-logo { width:30px; height:30px; object-fit:contain; }
+.zy-auth-welcome-heading { margin-top:78px; }
+.zy-auth-welcome-heading h1 { margin:0; font-size:calc(28px + var(--zy-font-adjust,0px)); font-weight:400; line-height:1.4; letter-spacing:0; }
+.zy-auth-welcome-heading p { margin:12px 0 0; color:var(--zy-auth-secondary); font-size:calc(13px + var(--zy-font-adjust,0px)); line-height:1.7; }
+.zy-auth-welcome-actions { display:flex; flex-direction:column; flex:none; gap:12px; margin-top:35px; }
+.zy-auth-qr-status { display:flex; flex:none; align-items:center; justify-content:center; gap:7px; margin-top:auto; padding-top:28px; color:var(--zy-auth-secondary); font-size:calc(11px + var(--zy-font-adjust,0px)); }
+.zy-auth-qr-status>span>span { margin-left:7px; opacity:.7; }
+.zy-auth-heading { align-self:stretch; flex:none; margin-top:22px; color:var(--zy-auth-accent); }
+.zy-auth-heading h1 { margin:0; font-size:calc(20px + var(--zy-font-adjust,0px)); font-weight:400; color:var(--zy-auth-ink); letter-spacing:1px; line-height:1.4; }
+.zy-auth-heading p { margin:6px 0 0; font-size:calc(12px + var(--zy-font-adjust,0px)); line-height:1.5; color:var(--zy-auth-secondary); }
+.zy-auth-choices,.zy-auth-form { width:100%; flex:none; margin-top:16px; display:flex; flex-direction:column; }
+.zy-auth-choices { gap:12px; }
+.zy-auth-form label { display:block; margin-bottom:6px; color:var(--zy-auth-ink); font-size:calc(11px + var(--zy-font-adjust,0px)); line-height:16px; font-weight:400; }
+.zy-auth-form input { box-sizing:border-box; width:100%; height:36px; padding:0 11px; margin:0; border:0; border-radius:12px; background:var(--zy-auth-input-fill); color:var(--zy-auth-ink); font:inherit; font-size:calc(13px + var(--zy-font-adjust,0px)); outline:none; box-shadow:var(--zy-auth-input-ring-near),var(--zy-auth-input-ring-far); transition:box-shadow 220ms ease,background 220ms ease; }
+.zy-auth-form input:focus-visible { outline:none; box-shadow:var(--zy-auth-input-ring-near-focus),var(--zy-auth-input-ring-far-focus); }
+.zy-auth-card button { cursor:pointer; font-family:inherit; -webkit-app-region:no-drag; }
+.zy-auth-card input { -webkit-app-region:no-drag; }
+.zy-auth-card button:focus-visible { outline:none; box-shadow:0 0 0 2px var(--zy-auth-paper),0 0 0 4px var(--zy-auth-button-focus); }
+.zy-auth-primary,.zy-auth-secondary { min-height:40px; flex:none; border:0; border-radius:12px; font-size:calc(14px + var(--zy-font-adjust,0px)); font-weight:400; transition:filter 160ms ease,box-shadow 180ms ease; }
+.zy-auth-primary { color:var(--zy-auth-primary-ink); background:linear-gradient(110deg,color-mix(in srgb,var(--zy-auth-teal) var(--zy-auth-primary-strength),var(--zy-auth-primary-mix)),color-mix(in srgb,var(--zy-auth-lilac) var(--zy-auth-primary-strength),var(--zy-auth-primary-mix))); }
+.zy-auth-primary:hover { filter:brightness(.97); }
+.zy-auth-primary:disabled { opacity:.6; cursor:wait; }
+.zy-auth-secondary { color:var(--zy-auth-ink); background:var(--zy-auth-secondary-fill); box-shadow:var(--zy-auth-secondary-shadow); }
+.zy-auth-secondary:hover { background:var(--zy-auth-secondary-hover); }
+.zy-auth-form .zy-auth-primary { margin-top:3px; }
+.zy-auth-switch { align-self:center; border:0; background:none; padding:8px 0; color:var(--zy-auth-secondary); font-size:calc(11px + var(--zy-font-adjust,0px)); line-height:17px; }
+.zy-auth-back { align-self:flex-start; flex:none; margin-top:auto; border:0; background:none; padding:12px 0 0; color:var(--zy-auth-secondary); font-size:calc(11px + var(--zy-font-adjust,0px)); line-height:17px; }
+.zy-auth-switch:hover,.zy-auth-back:hover { color:var(--zy-auth-accent); }
+.zy-auth-error { max-width:100%; margin:0 0 12px; color:var(--zy-auth-error-ink); font-size:calc(12px + var(--zy-font-adjust,0px)); line-height:1.5; animation:zy-auth-error-enter 180ms ease-out; }
+.zy-auth-loading { margin-block:auto; text-align:center; color:var(--zy-auth-secondary); font-size:calc(14px + var(--zy-font-adjust,0px)); }
+.zy-auth-reset-error { margin-top:45px; }
+.zy-auth-field { min-width:0; margin-bottom:10px; }
+.zy-auth-field-feedback { display:grid; grid-template-rows:0fr; margin-top:0; opacity:0; transform:translateY(6px); transition:grid-template-rows 180ms ease,margin-top 180ms ease,opacity 160ms ease,transform 180ms ease; }
+.zy-auth-field-error { min-height:0; overflow:hidden; margin:0; color:var(--zy-auth-error-ink); font-size:calc(11px + var(--zy-font-adjust,0px)); line-height:1.5; }
+.zy-auth-field.is-invalid .zy-auth-field-feedback { grid-template-rows:1fr; margin-top:7px; opacity:1; transform:translateY(0); }
+.zy-auth-field.is-invalid input { box-shadow:var(--zy-auth-error-shadow); }
+.zy-auth-field.is-invalid input:focus-visible { box-shadow:var(--zy-auth-error-shadow-focus); }
+.zy-auth-field.is-invalid[data-feedback-phase='odd'] input { animation:zy-auth-input-shake-a 300ms ease-out; }
+.zy-auth-field.is-invalid[data-feedback-phase='even'] input { animation:zy-auth-input-shake-b 300ms ease-out; }
+@keyframes zy-auth-input-shake-a { 0%,100% { transform:translateX(0); } 20%,60% { transform:translateX(-4px); } 40%,80% { transform:translateX(4px); } }
+@keyframes zy-auth-input-shake-b { 0%,100% { transform:translateX(0); } 20%,60% { transform:translateX(-4px); } 40%,80% { transform:translateX(4px); } }
+@keyframes zy-auth-error-enter { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+@media (prefers-reduced-motion:reduce) { .zy-auth-form input,.zy-auth-field-feedback,.zy-auth-error,.zy-auth-primary,.zy-auth-secondary { animation:none; transition:none; transform:none; } }
+@media (max-width:360px) { .zy-auth-stage { padding:12px; } }
+@media (max-height:548px) { .zy-auth-stage { padding:12px; } .zy-auth-stage .zy-reflective-card { height:min(500px,calc(100dvh - 24px)); } }
+
+.zy-invite-form { gap:16px; margin-top:64px; }
+.zy-invite-input input { min-height:52px; padding:14px 16px; border-radius:12px; }
+.zy-invite-adult-notice { margin:0; color:var(--zy-auth-secondary); font-size:calc(12px + var(--zy-font-adjust,0px)); line-height:1.6; }
+.zy-auth-form .zy-invite-adult-check { display:flex; align-items:center; gap:9px; color:var(--zy-auth-ink); font-size:calc(14px + var(--zy-font-adjust,0px)); }
+.zy-invite-adult-check input { width:18px; height:18px; accent-color:var(--zy-auth-accent); box-shadow:none; }
+.zy-storage-feedback { position:fixed; z-index:10000; bottom:18px; left:50%; transform:translateX(-50%); box-sizing:border-box; width:max-content; max-width:calc(100vw - 32px); display:flex; align-items:center; gap:16px; padding:12px 16px; border-radius:12px; background:var(--zy-auth-paper); color:var(--zy-auth-ink); box-shadow:var(--zy-auth-secondary-shadow); font-size:calc(13px + var(--zy-font-adjust,0px)); line-height:1.5; }
+.zy-storage-feedback button { padding:6px 10px; border:0; border-radius:10px; background:var(--zy-auth-secondary-fill); color:var(--zy-auth-accent); white-space:nowrap; cursor:pointer; }
+.zy-storage-feedback div { display:flex; gap:8px; }
+@media(max-width:700px) { .zy-storage-feedback { flex-direction:column; align-items:flex-start; } .zy-invite-form { margin-top:44px; } }
+@supports(corner-shape:squircle) { .zy-invite-input input,.zy-storage-feedback { corner-shape:squircle; } }

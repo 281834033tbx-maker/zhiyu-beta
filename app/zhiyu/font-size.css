@@ -1,0 +1,5 @@
+/* Text sizing is owned by each component; this file only exposes the setting. */
+:root { --zy-font-adjust:0px; }
+:root[data-zy-font-size='small'] { --zy-font-adjust:-1px; }
+:root[data-zy-font-size='large'] { --zy-font-adjust:2px; }
+html[data-zy-theme][data-zy-font-size] :is(.zy-app,.zy-dialog,.zy-auth-stage) {font-size:calc(14px + var(--zy-font-adjust,0px));}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.next/
+.vite/
+.wrangler/
+.npc-runtime/
+.env*
+!.env.example
+output/
+*.tsbuildinfo
+.DS_Store
