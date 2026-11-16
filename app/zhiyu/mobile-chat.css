@@ -57,14 +57,8 @@ html[data-zy-theme] body .zy-phone-content .zy-app.zy-desktop.zy-mobile.zy-page-
 .zy-mobile .zy-choice-number { display:none; }
 html[data-zy-theme] body .zy-phone-content .zy-app.zy-desktop.zy-mobile.zy-page-chat .zy-choice-option[aria-pressed='true'] { background:var(--zy-m-outgoing); border-color:var(--zy-m-outgoing); color:var(--zy-m-on-outgoing); }
 .zy-mobile .zy-choice-option[aria-pressed='true']::before { color:var(--zy-m-on-outgoing); }
-.zy-mobile .voice-bubble-wrap.is-mobile { width:120px; align-items:stretch; gap:0; }
-.zy-mobile .voice-bubble.is-mobile { width:120px; min-width:120px; height:20px; padding:0; display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.zy-mobile .zy-m-voice-play { flex:none; width:16px; height:16px; fill:currentColor; }
-.zy-mobile .zy-m-voice-bars { display:flex; align-items:center; justify-content:center; gap:3px; height:20px; }
-.zy-mobile .zy-m-voice-bars i { display:block; width:2px; flex:none; border-radius:999px; background:var(--zy-m-edge); }
-.zy-mobile .zy-m-voice-bars i.is-played { background:var(--zy-m-accent); }
-.zy-mobile .voice-bubble.is-mobile .voice-bubble-duration { font-size:calc(13px + var(--zy-font-adjust,0px)); color:var(--zy-m-muted); font-variant-numeric:tabular-nums; }
-.zy-mobile .zy-m-voice-transcript { box-sizing:border-box; display:block; margin-top:7px; padding:8px 12px; border:.5px solid var(--zy-m-chat-line); border-radius:10px; background:var(--zy-m-chat-bg); color:var(--zy-m-muted); font-size:calc(12px + var(--zy-font-adjust,0px)); white-space:pre-wrap; }
+.zy-mobile .voice-bubble.is-mobile { min-width:80px; height:20px; padding:0; display:flex; align-items:center; justify-content:flex-end; gap:5px; }
+.zy-mobile .voice-bubble.is-mobile .voice-bubble-duration { font-size:calc(13px + var(--zy-font-adjust,0px)); color:inherit; font-variant-numeric:tabular-nums; }
 .zy-mobile .zy-m-composer { position:absolute; z-index:30; left:0; right:0; pointer-events:none; }
 .zy-mobile .zy-m-compose-controls { position:relative; padding:6px 12px calc(20px + env(safe-area-inset-bottom)); pointer-events:auto; }
 .zy-mobile .zy-m-composer.is-obstructed .zy-m-compose-controls { padding-bottom:8px; }

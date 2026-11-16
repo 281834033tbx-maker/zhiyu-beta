@@ -37,7 +37,7 @@ export function betaNpcRoutePolicy(rawUrl:string,method:string):RoutePolicy{
   if(path==='/api/npc/moments/run-now'||/^\/api\/npc\/moments\/[a-zA-Z0-9_-]+\/interaction$/.test(path))return method==='POST'?allow:deny;
   if(path==='/api/npc/media')return method==='POST'?allow:deny;
   if(mediaFile.test(path)||audioFile.test(path)||path==='/api/npc/audio/status')return method==='GET'?allow:deny;
-  if(['/api/npc/audio/upload','/api/npc/audio/translate','/api/npc/images/retry','/api/npc/voice/retry'].includes(path))return method==='POST'?allow:deny;
+  if(['/api/npc/audio/upload','/api/npc/audio/translate','/api/npc/audio/transcribe','/api/npc/images/retry','/api/npc/voice/retry'].includes(path))return method==='POST'?allow:deny;
   if(path==='/api/npc/beta-surveys')return method==='GET'?allow:deny;
   if(/^\/api\/npc\/beta-surveys\/(?:A|B)$/.test(path))return method==='GET'||method==='PUT'?allow:deny;
   if(/^\/api\/npc\/beta-surveys\/(?:A|B)\/(?:submit|seen)$/.test(path))return method==='POST'?allow:deny;

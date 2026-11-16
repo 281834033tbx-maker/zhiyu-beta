@@ -9,12 +9,11 @@ function label(seconds:number|null){return seconds===null?'…':seconds<60?`${se
 
 type Props={src:string;durationSeconds?:number;transcript?:string};
 export default function VoiceBubble(props:Props){return <VoiceBubbleRecording key={`${props.src}:${props.durationSeconds||''}`} {...props}/>;}
-function VoiceBubbleRecording({src,durationSeconds,transcript}:Props){
+function VoiceBubbleRecording({src,durationSeconds}:Props){
  const mobile=useContext(MobileComposerContext);
  const audio=useRef<HTMLAudioElement>(null),objectUrl=useRef<string|null>(null),loading=useRef<Promise<string>|null>(null),abort=useRef<AbortController|null>(null);
  const [seconds,setSeconds]=useState<number|null>(()=>validSeconds(durationSeconds));
  const [playing,setPlaying]=useState(false),[failed,setFailed]=useState(false);
- const [progress,setProgress]=useState(0);
 
  const ensureLoaded=useCallback(():Promise<string>=>{
   if(objectUrl.current)return Promise.resolve(objectUrl.current);
@@ -59,19 +58,16 @@ function VoiceBubbleRecording({src,durationSeconds,transcript}:Props){
  }
  return <div className={'voice-bubble-wrap'+(mobile?' is-mobile':'')}>
   <button type="button" className={'voice-bubble'+(playing?' is-playing':'')+(mobile?' is-mobile':'')} onClick={toggle} aria-label={`${playing?'暂停':'播放'}语音，${seconds===null?'时长加载中':`${seconds}秒`}`} aria-pressed={playing}>
-   {mobile?<><svg className="zy-m-voice-play" viewBox="0 0 16 16" aria-hidden="true">{playing?<path d="M3 2h3v12H3zm7 0h3v12h-3z"/>:<path d="M4 2.2v11.6L13 8z"/>}</svg><span className="zy-m-voice-bars" aria-hidden="true">{[7,13,18,10,15,20,12,16,8].map((height,index)=><i key={index} className={progress>index/9?'is-played':''} style={{height}}/>)}</span><span className="voice-bubble-duration">{label(seconds)}</span></>:<>
    <span className="voice-bubble-duration">{label(seconds)}</span>
    <svg className="voice-bubble-waves" width="17" height="17" viewBox="0 0 17 17" fill="none" aria-hidden="true">
     <circle className="voice-wave-one" cx="12.7" cy="8.5" r="1.1" fill="currentColor"/>
     <path className="voice-wave-two" d="M9.6 5.4a4.4 4.4 0 0 0 0 6.2" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round"/>
     <path className="voice-wave-three" d="M6.8 2.8a8.1 8.1 0 0 0 0 11.4" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round"/>
    </svg>
-   </>}
   </button>
-  {mobile&&transcript?.trim()&&<span className="zy-m-voice-transcript">{transcript}</span>}
   {/* Voice-only owner-scoped blobs have no separate caption file. Their real transcript is exposed by the surrounding message’s “转文字” action. */}
   {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- Equivalent text is available in MessageActions; do not invent captions for dynamic recordings. */}
-  <audio ref={audio} preload="none" onLoadedMetadata={readDuration} onDurationChange={readDuration} onTimeUpdate={()=>{if(mobile&&audio.current){const total=audio.current.duration;setProgress(total>0&&Number.isFinite(total)?audio.current.currentTime/total:0);}}} onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onEnded={()=>{setPlaying(false);if(mobile)setProgress(1);}} onError={()=>{setPlaying(false);setFailed(true);}} />
+  <audio ref={audio} preload="none" onLoadedMetadata={readDuration} onDurationChange={readDuration} onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onEnded={()=>setPlaying(false)} onError={()=>{setPlaying(false);setFailed(true);}} />
   {failed&&<span className="voice-bubble-error" role="alert">播放失败，点气泡重试</span>}
  </div>;
 }

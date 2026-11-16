@@ -7,6 +7,7 @@ const candidates=[
   '.zy-post','.tb-task-item','.tb-active-card','.zy-m-task-row','.zy-m-task-active',
   '.zy-tb-history-day','.zy-mobile-me-settings-group','.zy-settings-section',
 ].join(',');
+const candidateClasses=new Set(candidates.split(',').map(selector=>selector.slice(1)));
 const panels='.zy-app,.zy-dialog,dialog.zy-settings-dialog';
 const excluded='.xx-thread,.zy-thread,.zy-group-thread,.zy-mobile-call,.zy-realtime-call,.zy-auth-stage,[data-scroll-reveal="off"]';
 type ScrollState={top:number;userUntil:number;downUntil:number};
@@ -23,14 +24,19 @@ export default function ScrollReveal() {
     const seen=new Set<string>();
     const animations=new Map<HTMLElement,Animation>();
     const additions=new Set<Element>();
+    let cleanupNeeded=false;
     let frame=0;
     let touch:{root:HTMLElement;y:number}|null=null;
     const documentRoot=()=>document.scrollingElement instanceof HTMLElement?document.scrollingElement:document.documentElement;
-    const rootFor=(node:Element|null):HTMLElement=>{
+    const rootFor=(node:Element|null,cache?:WeakMap<Element,HTMLElement>):HTMLElement=>{
+      const path:Element[]=[];
+      const remember=(root:HTMLElement)=>{if(cache)for(const node of path)cache.set(node,root);return root;};
       for(let parent=node;parent&&parent!==document.body;parent=parent.parentElement){
-        if(parent instanceof HTMLElement&&/(?:auto|scroll)/.test(getComputedStyle(parent).overflowY))return parent;
+        const known=cache?.get(parent);if(known)return remember(known);
+        path.push(parent);
+        if(parent instanceof HTMLElement&&/(?:auto|scroll)/.test(getComputedStyle(parent).overflowY))return remember(parent);
       }
-      return documentRoot();
+      return remember(documentRoot());
     };
     const stateFor=(root:HTMLElement)=>{
       let state=roots.get(root);
@@ -79,36 +85,57 @@ export default function ScrollReveal() {
     const keyFor=(node:HTMLElement)=>{
       const main=node.closest('main.zy-app');
       const page=main?[...main.classList].find(name=>name.startsWith('zy-page-'))||'main':node.closest('dialog')?.className||'dialog';
-      const kind=[...node.classList].find(name=>candidates.split(',').includes('.'+name))||node.tagName;
+      const kind=[...node.classList].find(name=>candidateClasses.has(name))||node.tagName;
       const identity=node.id||node.dataset.taskId||node.dataset.activeTaskId||node.dataset.historyDate||node.querySelector('strong,h2,.tb-task-name,.zy-m-task-name')?.textContent?.trim()||node.getAttribute('aria-label')||'';
       return [location.pathname,page,kind,identity].join(':');
     };
-    const add=(node:Element)=>{
+    const add=(node:Element,rootCache:WeakMap<Element,HTMLElement>)=>{
       if(!(node instanceof HTMLElement)||targets.has(node)||!node.closest(panels)||node.closest(excluded))return;
       // Reveal an outer card once, instead of animating all its nested rows.
       if(node.parentElement?.closest(candidates))return;
       const key=keyFor(node);
       if(seen.has(key))return;
-      const root=rootFor(node.parentElement);
+      const root=rootFor(node.parentElement,rootCache);
       stateFor(root);
       targets.set(node,{root,key,measured:false});
       observer.observe(node);
     };
-    const scan=(tree:Element)=>{
-      if(tree.matches(candidates))add(tree);
-      for(const node of tree.querySelectorAll(candidates))add(node);
+    const scan=(tree:Element,rootCache:WeakMap<Element,HTMLElement>)=>{
+      if(tree.matches(candidates))add(tree,rootCache);
+      for(const node of tree.querySelectorAll(candidates))add(node,rootCache);
     };
     const flush=()=>{
       frame=0;
-      for(const node of additions)if(node.isConnected)scan(node);
+      // This cache lasts only one discovery batch, so responsive overflow or
+      // a later reparenting cannot retain a stale scroll-root measurement.
+      const rootCache=new WeakMap<Element,HTMLElement>();
+      for(const node of additions){
+        if(!node.isConnected)continue;
+        let covered=false;
+        for(let parent=node.parentElement;parent;parent=parent.parentElement)if(additions.has(parent)){covered=true;break;}
+        if(!covered)scan(node,rootCache);
+      }
       additions.clear();
-      for(const [node] of targets)if(!node.isConnected){observer.unobserve(node);targets.delete(node);}
-      for(const [node,animation] of animations)if(!node.isConnected){animation.cancel();forgetAnimation(node,animation);}
-      for(const [root] of roots)if(!root.isConnected)roots.delete(root);
+      if(cleanupNeeded){
+        cleanupNeeded=false;
+        for(const [node] of targets)if(!node.isConnected){observer.unobserve(node);targets.delete(node);}
+        for(const [node,animation] of animations)if(!node.isConnected){animation.cancel();forgetAnimation(node,animation);}
+        for(const [root] of roots)if(!root.isConnected)roots.delete(root);
+      }
     };
     const mutations=new MutationObserver(records=>{
-      for(const record of records)for(const node of record.addedNodes)if(node instanceof Element)additions.add(node);
-      if(!frame)frame=requestAnimationFrame(flush);
+      for(const record of records){
+        const parent=record.target instanceof Element?record.target:null;
+        if(parent?.closest(excluded))continue;
+        for(const node of record.addedNodes){
+          if(!(node instanceof Element)||node.closest(excluded))continue;
+          if(node.closest(panels)||node.querySelector(panels))additions.add(node);
+        }
+        for(const node of record.removedNodes)if(node instanceof Element&&(parent?.closest(panels)||node.matches(panels)||node.querySelector(panels)))cleanupNeeded=true;
+      }
+      // Text/status replacements and excluded chat streams do not discover
+      // Reveal cards. In particular, they must not sweep every pending card.
+      if(!frame&&(additions.size||cleanupNeeded))frame=requestAnimationFrame(flush);
     });
     const scroll=(event:Event)=>{
       const root=event.target instanceof HTMLElement?event.target:documentRoot();
@@ -153,7 +180,7 @@ export default function ScrollReveal() {
       if(!event.shiftKey&&['ArrowDown','PageDown','End',' '].includes(event.key)&&node?.closest(panels))arm(rootFor(node));
     };
     const reduce=()=>{if(media.matches){disarm();for(const [node,animation] of animations){animation.cancel();forgetAnimation(node,animation);}}};
-    scan(document.body);
+    scan(document.body,new WeakMap<Element,HTMLElement>());
     mutations.observe(document.body,{childList:true,subtree:true});
     document.addEventListener('scroll',scroll,true);
     document.addEventListener('wheel',wheel,{capture:true,passive:true});

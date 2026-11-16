@@ -6,6 +6,8 @@ import PhosphorActionIcon from './phosphor-action-icon';
 import PressableIconButton from './pressable-icon-button';
 import {MobileLikeButton} from './mobile-effects';
 import {Heart,MessageCircle} from 'lucide-react';
+import ChatImage from './chat-image';
+import VoiceBubble from './voice-bubble';
 
 export function hasOwnMomentComment(post:Pick<Post,'comments'>) {
   return post.comments.some(comment=>comment.actorId==='self');
@@ -23,7 +25,7 @@ export default function MomentPostInteractions({post,authorName,selfName,actorNa
 }) {
   const ownComment=hasOwnMomentComment(post),likes=momentLikers(post,selfName);
   return <>
-    {mobile?<div className="zy-post-actions zy-mobile-post-actions"><MobileLikeButton className={post.liked?'liked':''} aria-label={`${post.liked?'取消点赞':'点赞'}${authorName}的动态`} aria-pressed={post.liked} disabled={busy} onClick={onLike}><Heart size={15} fill={post.liked?'currentColor':'none'}/><span>{post.liked?'取消':'赞'}</span></MobileLikeButton><i aria-hidden="true"/><MobileLikeButton className={editor?'is-commenting':''} aria-label={`评论${authorName}的动态`} aria-expanded={!!editor} onClick={onComment}><MessageCircle size={15}/><span>评论</span></MobileLikeButton></div>:<div className="zy-post-actions">
+    {mobile?<div className="zy-post-actions zy-mobile-post-actions"><MobileLikeButton className={post.liked?'liked':''} aria-label={`${post.liked?'取消点赞':'点赞'}${authorName}的动态`} aria-pressed={post.liked} disabled={busy} onClick={onLike}><Heart size={15} fill={post.liked?'currentColor':'none'}/></MobileLikeButton><i aria-hidden="true"/><MobileLikeButton className={editor?'is-commenting':''} aria-label={`评论${authorName}的动态`} aria-expanded={!!editor} onClick={onComment}><MessageCircle size={15}/></MobileLikeButton></div>:<div className="zy-post-actions">
       <PressableIconButton type="button" className={'zy-icon'+(post.liked?' liked':'')} aria-label={`${post.liked?'取消点赞':'点赞'}${authorName}的动态`} aria-pressed={post.liked} disabled={busy} onClick={onLike}>
         <PhosphorActionIcon name="like" size={23} gradient={post.liked} filled={post.liked}/><span className="zy-interaction-count">{post.likeCount??Number(post.liked)}</span>
       </PressableIconButton>
@@ -31,12 +33,16 @@ export default function MomentPostInteractions({post,authorName,selfName,actorNa
         <PhosphorActionIcon name="comment" size={22} gradient={ownComment} filled={ownComment}/><span className="zy-interaction-count">{post.comments.length}</span>
       </button>
     </div>}
-    {(likes.length>0||post.comments.length>0||editor)&&<section className="zy-moment-interaction-box" aria-label="点赞与评论">
+    {(likes.length>0||post.comments.length>0||!mobile&&editor)&&<section className="zy-moment-interaction-box" aria-label="点赞与评论">
       {likes.length>0&&<div className="zy-post-likers"><PhosphorActionIcon name="like" size={13}/><span>{likes.map((like,index)=><span key={like.actorId}>{index>0?'、':''}<strong>{like.actorId==='self'?selfName:actorName(like.actorId,like.name)}</strong></span>)}</span></div>}
-      {post.comments.length>0&&<div className="zy-post-comments" aria-label="动态评论">{post.comments.map(comment=><div className="zy-inline-comment" key={comment.id}>
+      {post.comments.length>0&&<div className="zy-post-comments" aria-label="动态评论">{post.comments.map(comment=>mobile?<div className="zy-inline-comment" key={comment.id}>
+        <button type="button" onClick={()=>onReply(comment)}><strong>{comment.actorId==='self'?selfName:comment.name}</strong>{comment.replyToName&&<span> 回复 <strong>{comment.replyToName}</strong></span>}：{comment.media?.type==='voice'?'':comment.text}</button>
+        {comment.media&&<div className="zy-mobile-comment-media">{comment.media.type==='voice'?<VoiceBubble src={comment.media.url} durationSeconds={comment.media.durationSeconds} transcript={comment.text}/>:<ChatImage src={comment.media.url} alt={comment.media.type==='sticker'?'评论表情包':'评论图片'} messageId={comment.id}/>}</div>}
+      </div>:<div className="zy-inline-comment" key={comment.id}>
         <button type="button" onClick={()=>onReply(comment)}><strong>{comment.actorId==='self'?selfName:comment.name}</strong>{comment.replyToName&&<span> 回复 <strong>{comment.replyToName}</strong></span>}：{comment.text}</button>
       </div>)}</div>}
-      {editor}
+      {!mobile&&editor}
     </section>}
+    {mobile&&editor}
   </>;
 }

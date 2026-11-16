@@ -19,8 +19,8 @@
   --zy-m-on-outgoing:#fafafc;
   --zy-m-accent:#527b98;
   --zy-m-edge:#83a9c5;
-  --zy-m-pro-ink:#886847;
-  --zy-m-pro-bg:#ffffff;
+  --zy-m-pro-ink:#35373f;
+  --zy-m-pro-bg:#e7e8ed;
   --zy-m-unread:#f34f59;
   --zy-m-nav-dot:#ee3639;
   --zy-m-like:#e05168;
@@ -85,8 +85,8 @@ html[data-zy-theme='dark'] :is(.zy-mobile,.zy-phone-mobile) {
   --zy-m-incoming:var(--zy-incoming);
   --zy-m-outgoing:var(--zy-outgoing);
   --zy-m-on-outgoing:var(--zy-on-outgoing);
-  --zy-m-pro-bg:#53665a;
-  --zy-m-pro-ink:#f0dcc6;
+  --zy-m-pro-bg:#45494f;
+  --zy-m-pro-ink:#fafafc;
   --zy-m-capsule:linear-gradient(110deg,rgb(56 69 60 / 78%),rgb(45 56 49 / 74%));
   --zy-m-capsule-edge:rgb(225 246 231 / 18%);
   --zy-m-capsule-shadow:-6px 8px 22px rgb(0 0 0 / 32%);

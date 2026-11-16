@@ -12,9 +12,10 @@ import {reportUserFacingError} from '../../lib/user-facing-errors';
 import {MobileIconButton} from './mobile-effects';
 import MobileEmojiPanel from './mobile-emoji-panel';
 import MobilePhotoPicker,{mobileImageError} from './mobile-photo-picker';
+import MobilePreviewKeyboard,{MOBILE_PREVIEW_KEYBOARD_HEIGHT,useMobilePreviewKeyboard,type MobilePreviewKeyboardActions} from './mobile-preview-keyboard';
 import './mobile-chat.css';
 
-export type MobileComposerProps={value:string;onChange:(text:string)=>void;onSend:(payload:ComposePayload)=>Promise<void|boolean>|void|boolean;disabled?:boolean;placeholder:string;label?:string;allowImages?:boolean;allowVoice?:boolean;textareaRef?:Ref<HTMLTextAreaElement>;onSelectionChange?:(text:string,start:number,end:number)=>void;onEditorKeyDown?:(event:KeyboardEvent<HTMLTextAreaElement>)=>void;aboveInput?:ReactNode;inputPrefix?:ReactNode;onError?:(message:string)=>void};
+export type MobileComposerProps={value:string;onChange:(text:string)=>void;onSend:(payload:ComposePayload)=>Promise<void|boolean>|void|boolean;onSendComplete?:()=>void;disabled?:boolean;placeholder:string;label?:string;autoFocus?:boolean;allowImages?:boolean;allowVoice?:boolean;textareaRef?:Ref<HTMLTextAreaElement>;onSelectionChange?:(text:string,start:number,end:number)=>void;onEditorKeyDown?:(event:KeyboardEvent<HTMLTextAreaElement>)=>void;aboveInput?:ReactNode;inputPrefix?:ReactNode;onError?:(message:string)=>void};
 type VoiceUpload={audioId:string;audioUrl:string;audioText:string;audioDurationSeconds:number};
 type RecordedVoice={blob:Blob;durationSeconds:number;action:'send'|'text';uploaded?:VoiceUpload};
 type HeldPointer={id:number;x:number;y:number;action:'send'|'cancel'|'text'};
@@ -34,10 +35,17 @@ export async function prepareMobileImage(file:File,original:boolean):Promise<Blo
  }catch{return file;}finally{URL.revokeObjectURL(url);}
 }
 
-export default function MobileComposer({value,onChange,onSend,disabled=false,placeholder,label='输入消息',allowImages=true,allowVoice=true,textareaRef,onSelectionChange,onEditorKeyDown,aboveInput,inputPrefix,onError}:MobileComposerProps){
+export default function MobileComposer({value,onChange,onSend,onSendComplete,disabled=false,placeholder,label='输入消息',autoFocus=false,allowImages=true,allowVoice=true,textareaRef,onSelectionChange,onEditorKeyDown,aboveInput,inputPrefix,onError}:MobileComposerProps){
  const [photoHost,setPhotoHost]=useState<Element|null>(null),[mode,setMode]=useState<'text'|'voice'>('text'),[panel,setPanel]=useState<'emoji'|'photos'|null>(null),[pasteFiles,setPasteFiles]=useState<File[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[recording,setRecording]=useState(false),[starting,setStarting]=useState(false),[recordSeconds,setRecordSeconds]=useState(0),[audioLevel,setAudioLevel]=useState<number|null>(null),[gesture,setGesture]=useState<HeldPointer['action']>('send'),[keyboardInset,setKeyboardInset]=useState(0),[keyboardOpen,setKeyboardOpen]=useState(false),[microphoneDenied,setMicrophoneDenied]=useState(false),[retryVoice,setRetryVoice]=useState<RecordedVoice|null>(null),[progress,setProgress]=useState<(NpcUploadProgress&{kind:'image'|'audio'})|null>(null);
  const shell=useRef<HTMLDivElement>(null),editor=useRef<HTMLTextAreaElement>(null),alive=useRef(true),locked=useRef(false),composing=useRef(false),selection=useRef({start:value.length,end:value.length}),held=useRef<HeldPointer|null>(null),recordStarting=useRef(false),recordingEnded=useRef(false),recorder=useRef<MediaRecorder|null>(null),stream=useRef<MediaStream|null>(null),recordTimer=useRef<ReturnType<typeof setInterval>|null>(null),startedAt=useRef(0),meterFrame=useRef<number|null>(null),audioContext=useRef<AudioContext|null>(null),uploadController=useRef<AbortController|null>(null),provider=useRef('local'),voiceDisposition=useRef<HeldPointer['action']>('send'),imageCache=useRef(new WeakMap<File,Map<boolean,{imageId:string;imageUrl:string}>>());
+ const currentValue=useRef(value),previewKeyboard=useMobilePreviewKeyboard({editorRef:editor,enabled:mode==='text'&&panel===null});
+ const previewOpen=useRef(false),previewActions=useRef<MobilePreviewKeyboardActions|null>(null),previewPinyin=useRef('');
+ const [previewComposition,setPreviewComposition]=useState('');
+ const changePreviewComposition=(text:string)=>{previewPinyin.current=text;setPreviewComposition(text);};
+ useLayoutEffect(()=>{currentValue.current=value;},[value]);
+ useLayoutEffect(()=>{previewOpen.current=previewKeyboard.open;},[previewKeyboard.open]);
  useImperativeHandle(textareaRef,()=>editor.current!);
+ useLayoutEffect(()=>{if(autoFocus)editor.current?.focus();},[autoFocus]);
  useEffect(()=>{if(error)onError?.(error);},[error,onError]);
  function releaseMicrophone(){
   if(recordTimer.current)clearInterval(recordTimer.current);recordTimer.current=null;
@@ -57,19 +65,19 @@ export default function MobileComposer({value,onChange,onSend,disabled=false,pla
   const update=()=>{
    if(!viewport){setKeyboardInset(0);setKeyboardOpen(false);return;}
    const height=Math.max(0,window.innerHeight-viewport.height-viewport.offsetTop),focused=document.activeElement===editor.current,open=height>80&&focused;
-   const chat=shell.current?.closest<HTMLElement>('.xx-chat,.zy-chat'),bottom=chat?.getBoundingClientRect().bottom??window.innerHeight;
+   const chat=shell.current?.closest<HTMLElement>('.xx-chat,.zy-chat,.zy-mobile'),bottom=chat?.getBoundingClientRect().bottom??window.innerHeight;
    setKeyboardOpen(open);setKeyboardInset(open?Math.max(0,bottom-viewport.height-viewport.offsetTop):0);
   };
   update();viewport?.addEventListener('resize',update);viewport?.addEventListener('scroll',update);window.addEventListener('resize',update);document.addEventListener('focusin',update);document.addEventListener('focusout',update);
   return()=>{viewport?.removeEventListener('resize',update);viewport?.removeEventListener('scroll',update);window.removeEventListener('resize',update);document.removeEventListener('focusin',update);document.removeEventListener('focusout',update);};
  },[]);
  useLayoutEffect(()=>{
-  const chat=shell.current?.closest<HTMLElement>('.xx-chat,.zy-chat');if(!chat)return;
+  const chat=shell.current?.closest<HTMLElement>('.xx-chat,.zy-chat,.zy-mobile');if(!chat)return;
   const thread=chat.querySelector<HTMLElement>('.xx-thread,.zy-thread'),atEnd=!thread||thread.scrollHeight-thread.scrollTop-thread.clientHeight<100;
-  chat.style.setProperty('--zy-m-composer-obstruction',`${panel==='emoji'?364:keyboardOpen?keyboardInset+64:112}px`);
+  chat.style.setProperty('--zy-m-composer-obstruction',`${panel==='emoji'?364:previewKeyboard.open?MOBILE_PREVIEW_KEYBOARD_HEIGHT+64:keyboardOpen?keyboardInset+64:112}px`);
   const frame=requestAnimationFrame(()=>{if(thread&&atEnd)thread.scrollTop=thread.scrollHeight;});
   return()=>{cancelAnimationFrame(frame);chat.style.removeProperty('--zy-m-composer-obstruction');};
- },[panel,keyboardOpen,keyboardInset]);
+ },[panel,keyboardOpen,keyboardInset,previewKeyboard.open]);
  useEffect(()=>{
   const chat=shell.current?.closest<HTMLElement>('.xx-chat,.zy-chat'),thread=chat?.querySelector<HTMLElement>('.xx-thread,.zy-thread');if(!thread)return;
   const seen=new WeakSet<Element>(),seenMessages=new WeakSet<Element>(),reduced=window.matchMedia('(prefers-reduced-motion: reduce)'),running=new Set<Animation>();
@@ -94,11 +102,14 @@ export default function MobileComposer({value,onChange,onSend,disabled=false,pla
  }
  async function deliver(payload:ComposePayload,send=onSend){if(await send(payload)===false)throw Error('消息没发出去，请重试');}
  async function sendText(){
-  if(disabled||locked.current||recording||starting||composing.current||!value.trim())return;
+  if(previewPinyin.current){if(previewActions.current)previewActions.current.commitPending();else textMode();return;}
+  if(disabled||locked.current||recording||starting||composing.current||!currentValue.current.trim())return;
+  const snapshot=currentValue.current,caret={...selection.current};let completed=false;
   locked.current=true;setBusy(true);setError('');
-  try{await deliver({text:value.trim()});}
-  catch(cause){if(alive.current)setError(reportUserFacingError(cause,'send','发送消息'));}
-  finally{locked.current=false;if(alive.current)setBusy(false);}
+  try{await deliver({text:snapshot.trim()});completed=true;}
+  catch(cause){if(alive.current){if(!currentValue.current||currentValue.current===snapshot){currentValue.current=snapshot;selection.current=caret;onChange(snapshot);}setError(reportUserFacingError(cause,'send','发送消息'));}}
+  finally{locked.current=false;if(alive.current){setBusy(false);if(previewOpen.current)requestAnimationFrame(()=>{if(alive.current&&previewOpen.current&&previewKeyboard.isRequested()){editor.current?.focus();editor.current?.setSelectionRange(selection.current.start,selection.current.end);}});}}
+  if(completed&&alive.current)onSendComplete?.();
  }
  async function sendImages(files:File[],original:boolean,onDelivered:(file:File)=>void=()=>{}){
   if(disabled||locked.current)throw Error('请等当前消息处理完再发送。');
@@ -124,10 +135,11 @@ export default function MobileComposer({value,onChange,onSend,disabled=false,pla
    }
   }catch(cause){if(alive.current)setError(reportUserFacingError(cause,'send','发送图片'));throw cause;}
   finally{locked.current=false;if(alive.current){setBusy(false);setProgress(null);}}
+  if(alive.current)onSendComplete?.();
  }
  async function processVoice(voice:RecordedVoice){
   if(locked.current||!alive.current)return;
-  locked.current=true;setBusy(true);setError('');let uploaded=voice.uploaded;
+  locked.current=true;setBusy(true);setError('');let uploaded=voice.uploaded,completed=false;
   try{
    if(!uploaded){
     setProgress({kind:'audio',loaded:0,total:null,phase:'preparing'});
@@ -140,12 +152,13 @@ export default function MobileComposer({value,onChange,onSend,disabled=false,pla
    if(!alive.current)return;
    if(voice.action==='text'){
     if(!uploaded.audioText.trim())throw Error('语音识别失败，请重试');
-    onChange(uploaded.audioText);selection.current={start:uploaded.audioText.length,end:uploaded.audioText.length};setMode('text');setPanel(null);
+    currentValue.current=uploaded.audioText;onChange(uploaded.audioText);selection.current={start:uploaded.audioText.length,end:uploaded.audioText.length};setMode('text');setPanel(null);
     requestAnimationFrame(()=>{if(alive.current)editor.current?.focus();});
-   }else await deliver({text:'',...uploaded});
+   }else {await deliver({text:'',...uploaded});completed=true;}
    if(alive.current)setRetryVoice(null);
   }catch(cause){if(alive.current){setRetryVoice({...voice,uploaded});setError(reportUserFacingError(cause,'send',voice.action==='text'?'识别语音':'发送语音'));}}
   finally{locked.current=false;if(alive.current){setBusy(false);setProgress(null);}}
+  if(completed&&alive.current)onSendComplete?.();
  }
  async function startRecording(){
   if(!allowVoice||recordStarting.current||recorder.current||locked.current||disabled)return;
@@ -205,32 +218,35 @@ export default function MobileComposer({value,onChange,onSend,disabled=false,pla
   if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
   if(!recordingEnded.current&&recorder.current?.state==='recording')recorder.current.stop();
  }
- function rememberSelection(){if(editor.current){selection.current={start:editor.current.selectionStart,end:editor.current.selectionEnd};onSelectionChange?.(value,selection.current.start,selection.current.end);}}
+ function rememberSelection(){if(editor.current){selection.current={start:editor.current.selectionStart,end:editor.current.selectionEnd};onSelectionChange?.(currentValue.current,selection.current.start,selection.current.end);}}
  function insert(text:string){
-  const {start,end}=selection.current,next=value.slice(0,start)+text+value.slice(end);if(next.length>4000)return;
-  onChange(next);selection.current={start:start+text.length,end:start+text.length};onSelectionChange?.(next,start+text.length,start+text.length);
-  requestAnimationFrame(()=>editor.current?.setSelectionRange(start+text.length,start+text.length));
+  const existing=currentValue.current,start=Math.min(selection.current.start,existing.length),end=Math.min(selection.current.end,existing.length),next=existing.slice(0,start)+text+existing.slice(end);if(next.length>4000)return false;
+  currentValue.current=next;onChange(next);selection.current={start:start+text.length,end:start+text.length};onSelectionChange?.(next,start+text.length,start+text.length);
+  requestAnimationFrame(()=>{const caret=start+text.length;if(currentValue.current===next&&selection.current.start===caret&&selection.current.end===caret)editor.current?.setSelectionRange(caret,caret);});
+  return true;
  }
  function erase(){
   const {start,end}=selection.current;if(start!==end){insert('');return;}if(!start)return;
-  const segments=Array.from(new Intl.Segmenter('zh',{granularity:'grapheme'}).segment(value.slice(0,start))),previous=segments.at(-1)?.index??Math.max(0,start-1);selection.current={start:previous,end};insert('');
+  const segments=Array.from(new Intl.Segmenter('zh',{granularity:'grapheme'}).segment(currentValue.current.slice(0,start))),previous=segments.at(-1)?.index??Math.max(0,start-1);selection.current={start:previous,end};insert('');
  }
- function textMode(){flushSync(()=>{setMode('text');setPanel(null);});editor.current?.focus();}
- const obstructed=keyboardOpen||panel==='emoji',isGroup=placeholder.includes('@'),blocked=busy||disabled;
- return <div ref={shell} className={`zy-m-composer${obstructed?' is-obstructed':''}${panel==='emoji'?' has-emoji':''}`} style={{bottom:keyboardOpen?Math.max(0,keyboardInset-6):0}} data-composer-state={recording?'recording':panel==='emoji'?'emoji':mode==='voice'?'voice':keyboardOpen?'keyboard':'text'}>
+ function textMode(){const caret={...selection.current};flushSync(()=>{setMode('text');setPanel(null);});editor.current?.focus();editor.current?.setSelectionRange(caret.start,caret.end);selection.current=caret;previewKeyboard.show();}
+ function previewEdit<T>(action:()=>T){const node=editor.current,caret=node&&node.value===currentValue.current?{start:node.selectionStart,end:node.selectionEnd}:selection.current;node?.focus();selection.current=caret;node?.setSelectionRange(caret.start,caret.end);return action();}
+ const obstructed=keyboardOpen||previewKeyboard.open||panel==='emoji',blocked=busy||disabled,inputPlaceholder=/^和.+说点什么[….]*$/.test(placeholder)?'输入消息':placeholder||'输入消息';
+ return <div ref={shell} className={`zy-m-composer${obstructed?' is-obstructed':''}${panel==='emoji'?' has-emoji':''}${previewKeyboard.open?' has-preview-keyboard':''}`} style={{bottom:keyboardOpen?Math.max(0,keyboardInset-6):0}} data-composer-state={recording?'recording':panel==='emoji'?'emoji':mode==='voice'?'voice':keyboardOpen||previewKeyboard.open?'keyboard':'text'}>
   <div className="zy-m-compose-controls">
    {error&&<div className="zy-m-compose-error" role="alert"><span>{error}</span>{retryVoice&&<button type="button" disabled={blocked} onClick={()=>void processVoice(retryVoice)}>重试</button>}{microphoneDenied&&window.zhiyuDesktop?.openMicrophoneSettings&&<button type="button" onClick={()=>void window.zhiyuDesktop?.openMicrophoneSettings?.()}>打开麦克风设置</button>}<button type="button" aria-label="关闭发送提示" disabled={busy} onClick={()=>{setError('');setRetryVoice(null);}}><X size={14}/></button></div>}
    {progress&&<div className="zy-m-upload-progress" aria-live="polite">{progress.phase==='uploading'&&progress.total!==null?<MeasuredProgress value={progress.loaded} total={progress.total} label={progress.kind==='audio'?'正在上传语音':'正在上传图片'}/>:<output>{progress.phase==='processing'?(progress.kind==='audio'?'上传完成，正在识别语音…':'上传完成，正在处理图片…'):progress.phase==='preparing'?'正在准备上传…':'正在上传…'}</output>}</div>}
    <div className="zy-m-above-input">{aboveInput}</div>
    {(recording||starting)&&<div className="zy-m-record-guidance" aria-label={starting?'正在开启麦克风':`正在录音 ${recordSeconds} 秒`}><div className={`zy-m-record-target is-cancel${gesture==='cancel'?' is-active':''}`}><span><X size={16}/></span><small>↖ 取消</small></div><output className="zy-m-record-meter"><span className={audioLevel===null?'is-fallback':''} aria-hidden="true">{Array.from({length:8},(_,index)=><i key={index} style={{height:audioLevel===null?`${6+(index%4)*3}px`:`${6+audioLevel*(6+(index%4)*2)}px`,animationDelay:`${index*100}ms`}}/>)}</span><strong>{starting?'…':`${recordSeconds}秒`}</strong></output><div className={`zy-m-record-target is-text${gesture==='text'?' is-active':''}`}><span>文</span><small>转文字 ↗</small></div></div>}
    <form className={`zy-m-compose-capsule${recording?' is-recording':''}`} onSubmit={event=>{event.preventDefault();void sendText();}}>
-    <MobileIconButton type="button" className="zy-m-compose-tool" aria-label={mode==='voice'?'切换键盘':'切换语音'} disabled={blocked||recording||starting} onClick={()=>{if(mode==='voice'){textMode();return;}if(!allowVoice){setError('当前聊天暂不支持发送语音，可以先发送文字或小表情。');return;}rememberSelection();editor.current?.blur();setPanel(null);setMode('voice');}}>{mode==='voice'?<Keyboard size={23} strokeWidth={1.6}/>:<Mic size={23} strokeWidth={1.6}/>}</MobileIconButton>
-    {mode==='voice'?<button type="button" className="zy-m-hold-to-talk" disabled={blocked} aria-label="按住说话，左上滑取消，右上滑转文字" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={event=>pointerEnd(event)} onPointerCancel={event=>pointerEnd(event,true)} onLostPointerCapture={event=>{if(held.current?.id===event.pointerId)pointerEnd(event,true);}} onContextMenu={event=>event.preventDefault()}>{starting?'正在开启麦克风…':recording?(gesture==='cancel'?'松开 取消':gesture==='text'?'松开 转文字':'松开 发送'):'按住 说话'}</button>:<div className="zy-m-text-entry">{inputPrefix}<textarea ref={editor} rows={1} value={value} disabled={blocked} aria-label={label} placeholder={isGroup?'发消息，输入 @ 选择成员':'输入消息'} maxLength={4000} enterKeyHint="send" onChange={event=>{onChange(event.target.value);selection.current={start:event.target.selectionStart,end:event.target.selectionEnd};onSelectionChange?.(event.target.value,event.target.selectionStart,event.target.selectionEnd);}} onSelect={rememberSelection} onFocus={()=>setPanel(null)} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} onKeyDown={event=>{onEditorKeyDown?.(event);if(event.defaultPrevented)return;if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();if(!composing.current&&!event.nativeEvent.isComposing&&Reflect.get(event.nativeEvent,'keyCode')!==229)void sendText();}if(event.key==='Escape')setPanel(null);}} onPaste={event=>{const files=Array.from(event.clipboardData.items).filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter((file):file is File=>!!file);if(files.length){event.preventDefault();if(!allowImages){setError('当前聊天暂不支持发送图片，可以先发送文字或小表情。');return;}editor.current?.blur();setPasteFiles(files);setPanel('photos');}}}/></div>}
-    <MobileIconButton type="button" className="zy-m-compose-tool" aria-label={panel==='emoji'?'切换键盘':'选择表情'} aria-expanded={panel==='emoji'} disabled={blocked||recording||starting} onClick={()=>{if(panel==='emoji'){textMode();return;}rememberSelection();editor.current?.blur();setMode('text');setPanel('emoji');}}>{panel==='emoji'?<Keyboard size={23} strokeWidth={1.6}/>:<Smile size={23} strokeWidth={1.6}/>}</MobileIconButton>
-    <MobileIconButton type="button" className="zy-m-compose-tool" aria-label="选择图片" disabled={blocked||recording||starting} onClick={()=>{if(!allowImages){setError('当前聊天暂不支持发送图片，可以先发送文字或小表情。');return;}rememberSelection();editor.current?.blur();setPasteFiles([]);setPanel('photos');}}><ImagePlus size={23} strokeWidth={1.6}/></MobileIconButton>
+    <MobileIconButton type="button" className="zy-m-compose-tool" aria-label={mode==='voice'?'切换键盘':'切换语音'} disabled={blocked||recording||starting} onClick={()=>{previewKeyboard.hide();if(mode==='voice'){textMode();return;}if(!allowVoice){setError('当前聊天暂不支持发送语音，可以先发送文字或小表情。');return;}rememberSelection();editor.current?.blur();setPanel(null);setMode('voice');}}>{mode==='voice'?<Keyboard size={23} strokeWidth={1.6}/>:<Mic size={23} strokeWidth={1.6}/>}</MobileIconButton>
+    {mode==='voice'?<button type="button" className="zy-m-hold-to-talk" disabled={blocked} aria-label="按住说话，左上滑取消，右上滑转文字" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={event=>pointerEnd(event)} onPointerCancel={event=>pointerEnd(event,true)} onLostPointerCapture={event=>{if(held.current?.id===event.pointerId)pointerEnd(event,true);}} onContextMenu={event=>event.preventDefault()}>{starting?'正在开启麦克风…':recording?(gesture==='cancel'?'松开 取消':gesture==='text'?'松开 转文字':'松开 发送'):'按住 说话'}</button>:<div className="zy-m-text-entry">{inputPrefix}<textarea ref={editor} rows={1} value={value} disabled={blocked} aria-label={label} placeholder={inputPlaceholder} maxLength={4000} enterKeyHint="send" onChange={event=>{currentValue.current=event.target.value;onChange(event.target.value);selection.current={start:event.target.selectionStart,end:event.target.selectionEnd};onSelectionChange?.(event.target.value,event.target.selectionStart,event.target.selectionEnd);}} onSelect={rememberSelection} onFocus={()=>{setPanel(null);previewKeyboard.show();}} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} onKeyDown={event=>{if(!composing.current&&previewOpen.current&&previewActions.current?.handleKey(event.nativeEvent)){event.preventDefault();return;}onEditorKeyDown?.(event);if(event.defaultPrevented)return;if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();if(!composing.current&&!event.nativeEvent.isComposing&&Reflect.get(event.nativeEvent,'keyCode')!==229)void sendText();}if(event.key==='Escape')setPanel(null);}} onPaste={event=>{const files=Array.from(event.clipboardData.items).filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter((file):file is File=>!!file);if(files.length){event.preventDefault();if(!allowImages){setError('当前聊天暂不支持发送图片，可以先发送文字或小表情。');return;}editor.current?.blur();setPasteFiles(files);setPanel('photos');}}}/></div>}
+    <MobileIconButton type="button" className="zy-m-compose-tool" aria-label={panel==='emoji'?'切换键盘':'选择表情'} aria-expanded={panel==='emoji'} disabled={blocked||recording||starting} onClick={()=>{previewKeyboard.hide();if(panel==='emoji'){textMode();return;}rememberSelection();editor.current?.blur();setMode('text');setPanel('emoji');}}>{panel==='emoji'?<Keyboard size={23} strokeWidth={1.6}/>:<Smile size={23} strokeWidth={1.6}/>}</MobileIconButton>
+    <MobileIconButton type="button" className="zy-m-compose-tool" aria-label="选择图片" disabled={blocked||recording||starting} onClick={()=>{previewKeyboard.hide();if(!allowImages){setError('当前聊天暂不支持发送图片，可以先发送文字或小表情。');return;}rememberSelection();editor.current?.blur();setPasteFiles([]);setPanel('photos');}}><ImagePlus size={23} strokeWidth={1.6}/></MobileIconButton>
    </form>
    {!obstructed&&<p className="zy-m-ai-disclosure">智友由 AI 驱动，可能会出错，重要的事请自己再确认</p>}
   </div>
+  {previewKeyboard.open&&<MobilePreviewKeyboard composition={previewComposition} onCompositionChange={changePreviewComposition} actionsRef={previewActions} disabled={blocked} canSend={!!value.trim()} onInsert={text=>previewEdit(()=>insert(text))} onDelete={()=>previewEdit(erase)} onSend={()=>void sendText()} onClose={()=>{previewKeyboard.hide();editor.current?.blur();}}/>}
   {panel==='emoji'&&<MobileEmojiPanel disabled={blocked} allowImages={allowImages} canSend={!!value.trim()} onEmoji={insert} onDelete={erase} onSend={()=>void sendText()} onSticker={file=>sendImages([file],true)}/>}
   {panel==='photos'&&<MobilePhotoPicker host={photoHost} initialFiles={pasteFiles} disabled={disabled} progress={progress?.kind==='image'?progress:null} onClose={()=>{setPanel(null);setPasteFiles([]);}} onSend={sendImages}/>}
  </div>;

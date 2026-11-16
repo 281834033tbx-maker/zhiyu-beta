@@ -80,4 +80,4 @@ docker exec -it zhiyu-beta npm run beta:admin
 | `npm run typecheck` | 检查 TypeScript |
 | `node scripts/test-beta-open-registration.mjs` | 用临时数据库验证开放注册、邀请码切换和账号隔离 |
 
-现行手机版包含整屏资料与聊天详情、悬浮导航、Scroll Reveal、轻微磁吸进入按钮、阻尼比 1 的弹簧滚动，以及图片原位展开与收回。真实手机、HTTPS 和实际模型/设备功能应在自己的部署环境验收。
+现行手机版包含整屏资料与聊天详情、悬浮导航、轻微磁吸进入按钮及图片原位展开与收回。触控板/触摸使用系统原生滚动，非编辑区键盘滚动保留阻尼比 1；Scroll Reveal 与导航上滑反馈保留。本次桌面同款语音、长按菜单与转文字、整页返回及电脑预览中文拼音修复均已包含。真实手机、HTTPS 和实际模型/设备功能应在自己的部署环境验收。

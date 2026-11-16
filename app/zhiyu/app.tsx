@@ -41,7 +41,8 @@ import { SelfProfileCard } from './self-profile-card';
 import {readSelfProfile,useSelfProfile} from './self-profile-store';
 import {appendLocalCharacterMessage,localCharacterChatKey,localCharacterIds,readLocalCharacterChat} from './local-character-chat';
 import BrandEntrance from './brand-entrance';
-import ChatComposer from './chat-composer';
+import ChatComposer,{type ComposePayload} from './chat-composer';
+import {momentCommentMedia} from '../../lib/npc/moment-comment';
 import MessageReceipt from './message-receipt';
 import MomentPostInteractions from './moment-post-interactions';
 import MomentCommentEditor from './moment-comment-editor';
@@ -1251,19 +1252,19 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
       }),
     );
   }
-  async function interactWithPost(post:Post, action:'like'|'comment', text='') {
+  async function interactWithPost(post:Post, action:'like'|'comment', text='',payload?:ComposePayload) {
     if(interactionBusy)return false;
     const expectedScope=groupAccountScope.current;
     if(post.source!=='npc-moment') {
       if(action==='like')patchPost(post.id,{liked:!post.liked,likeCount:(post.likeCount||Number(post.liked))+ (post.liked?-1:1)});
-      else patchPost(post.id,{comments:[...post.comments,{id:uid(),actorId:'self',name:self.nickname||self.name,text,time:now(),replyTo:commentReply?.id,replyToName:commentReply?.name}]});
+      else {const entry={id:uid(),actorId:'self' as const,name:self.nickname||self.name,text:payload?.audioText||text,time:now(),replyTo:commentReply?.id,replyToName:commentReply?.name,...(payload&&momentCommentMedia(payload)?{media:momentCommentMedia(payload)}:{})};setPosts(current=>current.map(item=>item.id===post.id?{...item,comments:[...item.comments,entry]}:item));}
       return true;
     }
     setInteractionBusy(post.id);
-    const key=post.id+'|'+text+'|'+(commentReply?.id||'');
+    const key=post.id+'|'+text+'|'+(commentReply?.id||'')+'|'+(payload?.imageId||payload?.audioId||payload?.assetId||'');
     if(action==='comment' && commentRequest.current?.key!==key)commentRequest.current={key,id:uid()};
     try {
-      const response=await npcFetch(`/api/npc/moments/${encodeURIComponent(post.id)}/interaction`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,liked:!post.liked,text,name:self.nickname||self.name,requestId:commentRequest.current?.id,replyTo:commentReply?.id})});
+      const response=await npcFetch(`/api/npc/moments/${encodeURIComponent(post.id)}/interaction`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,liked:!post.liked,text,name:self.nickname||self.name,requestId:commentRequest.current?.id,replyTo:commentReply?.id,...(payload?{imageId:payload.imageId,audioId:payload.audioId,assetId:payload.assetId}:{})})});
       if(!response.ok){const data=await response.json() as {error?:string};throw Error(data.error||'互动未成功');}
       const data=await response.json() as {items:Array<Post & {createdAt:number;status:string}>};
       if(groupAccountScope.current!==expectedScope)return false;
@@ -1439,8 +1440,8 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
       {liquidBaseEnabled && <LiquidBasePlate/>}
       {!mobile&&<MainWindowResizeHandles/>}
       {!mobile&&<DesktopAppearanceEditor key={account.id} accountId={account.id} layout="classic" editing={appearanceAccount===account.id} onClose={closeAppearance}/>}
-      {mobile&&!((page==='chat'&&!!selected)||page==='tasks'||page==='moments'||page==='me')&&<MobilePageHeader title={page==='contacts'?'通讯录':pageTitles[page]} onCreate={page==='chat'?()=>openGroupDialog(displayPerson(molly)):undefined}/>}
       {mobile&&<MobileNavigation page={page} self={self} unread={notificationUnreadCount} tasks={hasTaskInProgress} moments={momentBadge} hidden={mobileDetail&&!mobileOverlayDetail} onNavigate={next=>next==='moments'?openMoments():navigateMain(next)}/>}
+      {mobile&&page==='chat'&&!!selected&&<div className="zy-mobile-chat-safe-plane" aria-hidden="true"/>}
       <BrandEntrance src={asset('chat', 0)} />
       {!mobile&&<nav className="zy-rail" aria-label="主导航">
         <button
@@ -1516,6 +1517,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
             style={{ width: mobile?undefined:dirWidth }}
             aria-label={page === 'chat' ? '会话列表' : '联系人列表'}
           >
+            {mobile&&<MobilePageHeader title={page==='contacts'?'通讯录':pageTitles[page]} onCreate={page==='chat'?()=>openGroupDialog(displayPerson(molly)):undefined}/>}
             {mobile?(page==='chat'?<MobileSearch value={query} onChange={setQuery}/>:null):search}
             {page === 'chat' ? (
               <div className="zy-list-scroll zy-chat-list">
@@ -1689,7 +1691,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
                         <div className="zy-message-content">
                           <div className="zy-bubble-wrap" id={'local-message-'+m.id}>
                             {m.replyTo&&(()=>{const original=arr.find(x=>x.id===m.replyTo);return original?<button className="npc-quote" onClick={()=>document.getElementById('local-message-'+original.id)?.scrollIntoView({behavior:'smooth',block:'center'})}><strong>{original.mine?'你':person.name}</strong><span>{original.text||'[图片]'}</span></button>:null;})()}
-                            <MessageActions text={m.text} voice={!!m.audio} onQuote={()=>setQuoteDrafts(q=>({...q,[selected]:m.id}))} onDelete={()=>deleteLocalMessage(selected,m.id)} onForward={()=>beginForward(m.text)}>
+                            <MessageActions text={m.text} voice={!!m.audio} voiceSrc={m.audio} accountId={account.id} onQuote={()=>setQuoteDrafts(q=>({...q,[selected]:m.id}))} onDelete={()=>deleteLocalMessage(selected,m.id)} onForward={()=>beginForward(m.text)}>
                             <div className={'zy-bubble'+(m.audio?' zy-bubble-voice':'')}>
                               {m.image && (
                                 <ChatImage className="zy-message-photo" messageId={m.id} src={m.image} alt="发送的图片" gallery={{conversationId:selected,images:arr.filter(item=>!!item.image).map(item=>({id:item.id,src:item.image!,alt:'聊天图片',at:item.at,sender:item.mine?'你':person.name}))}}/>
@@ -1817,7 +1819,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
                 {(!mobile||!filter)&&<button type="button" className="zy-moments-tool" aria-label="发布动态" title="发布动态" onClick={()=>setModal({kind:'publish'})}><Camera size={19}/></button>}
               </div>
               <div className="zy-moments-cover-identity">
-              <span className="zy-moments-cover-name">{filter ? personById(filter).name : self.name||self.nickname}</span>
+              <span className="zy-moments-cover-name">{filter ? personById(filter).name : mobile?(self.nickname?.trim()&&self.nickname!==self.account?self.nickname:self.name?.trim()&&self.name!==self.account?self.name:'我'):(self.name||self.nickname)}</span>
               <button
                 className="zy-self-cover-avatar zy-moments-cover-profile"
                 aria-label={filter ? `查看${personById(filter).name}的资料` : '查看我的资料'}
@@ -1884,6 +1886,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
                       onLike={()=>void interactWithPost(post,'like')} onComment={()=>beginMomentComment(post)} onReply={reply=>beginMomentComment(post,reply)}
                       editor={momentCommentTarget?.accountId===account.id&&momentCommentTarget.postId===post.id?<MomentCommentEditor key={`${account.id}:${post.id}:${momentCommentTarget.id}`}
                         value={comment} onChange={setComment} disabled={!!interactionBusy} replyName={commentReply?.name} onCancelReply={()=>setCommentReply(null)} onCancel={cancelMomentComment}
+                        onSendPayload={async payload=>{const target=momentCommentTargetRef.current;if(!target||target.accountId!==account.id||target.postId!==post.id||(!payload.text.trim()&&!payload.imageId&&!payload.audioId&&!payload.assetId)||interactionBusy)return false;return await interactWithPost(post,'comment',payload.text.trim(),payload);}}
                         onSubmit={async()=>{const target=momentCommentTargetRef.current;if(!target||target.accountId!==account.id||target.postId!==post.id||!comment.trim()||interactionBusy)return;
                           if(await interactWithPost(post,'comment',comment.trim())&&momentCommentTargetRef.current?.id===target.id)cancelMomentComment();}}/>:undefined}/>
                     </div>

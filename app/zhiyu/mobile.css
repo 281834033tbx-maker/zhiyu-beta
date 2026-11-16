@@ -8,8 +8,8 @@
 }
 .zy-phone-mobile .zy-phone-shell {position:relative;isolation:isolate;box-sizing:border-box;width:var(--zy-phone-width);aspect-ratio:426 / 900;min-width:0;min-height:0;overflow:hidden;border:0;border-radius:56px;clip-path:inset(0 round 56px);background:var(--zy-m-hardware);box-shadow:none;}
 .zy-phone-mobile .zy-phone-screen {position:absolute;inset:7px;isolation:isolate;overflow:hidden;border-radius:48px;clip-path:inset(0 round 48px);background:var(--zy-m-chat-bg);}
-.zy-phone-mobile .zy-phone-screen:has(.zy-mobile:is(.is-mobile-list,.zy-page-chat,.zy-page-contacts,.zy-page-me):not(.is-mobile-detail)) {background:var(--zy-m-list-bg);}
-.zy-phone-mobile .zy-phone-screen:has(.zy-mobile:is(.is-mobile-list,.zy-page-chat,.zy-page-contacts,.zy-page-me):not(.is-mobile-detail))::before {content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:var(--zy-m-list-wash);-webkit-mask-image:var(--zy-m-list-mask);mask-image:var(--zy-m-list-mask);}
+.zy-phone-mobile .zy-phone-screen:has(.zy-mobile:is(.zy-page-chat,.zy-page-contacts,.zy-page-me)) {background:var(--zy-m-list-bg);}
+.zy-phone-mobile .zy-phone-screen:has(.zy-mobile:is(.zy-page-chat,.zy-page-contacts,.zy-page-me))::before {content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:var(--zy-m-list-wash);-webkit-mask-image:var(--zy-m-list-mask);mask-image:var(--zy-m-list-mask);}
 .zy-phone-mobile .zy-phone-status {position:absolute;z-index:5;top:3px;left:23px;right:23px;height:42px;display:flex;align-items:center;justify-content:space-between;color:var(--zy-m-ink);pointer-events:none;}
 .zy-phone-mobile .zy-phone-status :is(time,span:first-child) {min-width:45px;font-size:calc(14px + var(--zy-font-adjust,0px));font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.3px;}
 .zy-phone-mobile :is(.zy-phone-status-icons,.zy-phone-status>div) {display:flex;align-items:center;gap:5px;}
@@ -17,6 +17,10 @@
 .zy-phone-mobile .zy-phone-status svg:last-child {width:22px;height:18px;}
 .zy-phone-mobile .zy-phone-island {position:absolute;z-index:6;top:11px;left:50%;width:112px;height:29px;border-radius:999px;background:var(--zy-m-hardware);transform:translateX(-50%);pointer-events:none;}
 .zy-phone-mobile .zy-phone-content {position:absolute;inset:47px 0 0;isolation:isolate;overflow:hidden;border-radius:0;min-width:0;min-height:0;}
+.zy-phone-mobile {--zy-m-safe-top:47px;--zy-m-detail-safe-top:var(--zy-m-safe-top);}
+.zy-phone-mobile .zy-phone-content:has(main.zy-mobile) {inset:0;padding-top:0;}
+html[data-zy-theme] .zy-phone-mobile .zy-phone-content main.zy-app.zy-desktop.zy-mobile {padding-top:var(--zy-m-safe-top);}
+html[data-zy-theme] .zy-phone-mobile .zy-phone-content main.zy-app.zy-desktop.zy-mobile.zy-page-moments {padding-top:0;}
 .zy-phone-mobile .zy-phone-home-indicator {position:absolute;z-index:8;bottom:10px;left:50%;width:126px;height:5px;border-radius:999px;background:var(--zy-m-ink);transform:translateX(-50%);pointer-events:none;}
 html[data-zy-mobile-native='true'] .zy-phone-preview.zy-phone-mobile {--zy-phone-width:100vw;width:100vw;height:100dvh;min-height:0;padding:0;overflow:hidden;background:transparent;}
 html[data-zy-mobile-native='true'] .zy-phone-mobile .zy-phone-shell {width:100%;height:100%;aspect-ratio:auto;}
@@ -31,6 +35,10 @@ html[data-zy-mobile-native='true'] .zy-phone-mobile :is(.zy-phone-status,.zy-pho
 .zy-phone-mobile .zy-phone-content :is(.zy-desktop-stage,.zy-dual-preview,.zy-desktop-slot) {width:100%;height:100%;min-width:0;min-height:0;padding:0;margin:0;background:transparent;}
 html[data-zy-theme] .zy-phone-mobile .zy-phone-content .zy-app.zy-desktop.zy-mobile {position:relative;display:flex;flex-direction:column;box-sizing:border-box;width:100%;height:100%;min-width:0;min-height:0;max-width:none;max-height:none;padding:0;overflow:hidden;border:0;border-radius:0;box-shadow:none;background:transparent;color:var(--zy-m-ink);font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;font-weight:400;}
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-base {display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;margin:0;border:0;border-radius:0;box-shadow:none;overflow:hidden;background:transparent;}
+/* Only the hardware screen has an exterior contour. Desktop panel corners
+   inside a phone expose the list wash at the chat/status-bar join. */
+html[data-zy-theme] .zy-phone-mobile .zy-phone-content .zy-app.zy-desktop.zy-mobile .zy-base>:is(.xx-layout,.zy-chat,.zy-moments,.zy-task-board,.zy-mobile-me,.zy-user-facing-error),
+html[data-zy-theme] .zy-phone-mobile .zy-phone-content .zy-app.zy-desktop.zy-mobile :is(.xx-chat,.zy-mobile-subpage,.zy-mobile-detail-page,.zy-mobile-profile-drawer) {border-radius:0;}
 .zy-mobile :is(time,output,.zy-badge,[data-mobile-numeric]) {font-variant-numeric:tabular-nums;}
 .zy-mobile :is(.zy-mobile-brand,.zy-mobile-self,.zy-mobile-settings,.zy-mobile-nav-label,.zy-nav-highlight,.zy-panel-divider) {display:none;}
 .zy-mobile :is(.zy-mobile-header,.zy-mobile-page-head,.zy-mobile-detail-head) {position:relative;z-index:4;display:flex;align-items:center;justify-content:center;flex:0 0 52px;box-sizing:border-box;min-height:52px;min-width:0;padding:0 8px;color:var(--zy-m-ink);-webkit-app-region:no-drag;}
@@ -72,7 +80,7 @@ html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-nav-glyph>.zy-badge {top:-7
 .zy-mobile :is(.zy-mobile-badge,.zy-mobile-dot).is-entering {animation:zy-m-badge-pop 420ms cubic-bezier(.3,1.4,.5,1);}
 
 /* Lists are full bleed and scroll beneath the floating navigation. */
-html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-directory {flex:1;box-sizing:border-box;width:100%;min-width:0;min-height:0;max-width:none;padding:0;border:0;border-radius:0;--directory-background:transparent;background:transparent;-webkit-app-region:no-drag;}
+html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-directory {display:flex;flex:1;flex-direction:column;box-sizing:border-box;width:100%;min-width:0;min-height:0;max-width:none;padding:0;border:0;border-radius:0;--directory-background:transparent;background:transparent;-webkit-app-region:no-drag;}
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-directory::before {content:none;}
 .zy-mobile .zy-directory>.zy-self {display:none;}
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop :is(.zy-search-row,.zy-mobile-search) {box-sizing:border-box;margin:4px 14px 8px;}
@@ -85,7 +93,7 @@ html[data-zy-theme] .zy-mobile.zy-app.zy-desktop :is(.zy-search,.zy-mobile-searc
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop :is(.zy-list-scroll,.zy-address-list,.zy-mobile-list-scroll,.zy-mobile-contacts-scroll,.zy-mobile-groups-scroll) {flex:1;box-sizing:border-box;min-width:0;min-height:0;padding:0 0 112px;overflow-y:auto;overscroll-behavior:contain;background:transparent;}
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop.zy-page-chat:not(.is-mobile-detail) .zy-base>:is(.xx-layout,.zy-chat),
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop.zy-page-contacts:not(.is-mobile-detail) .zy-base>:is(.zy-contact-detail,.zy-contact-profile,.zy-chat),
-html[data-zy-theme] .zy-mobile.zy-app.zy-desktop.is-mobile-detail .zy-base>.zy-directory {display:none;}
+html[data-zy-theme] .zy-mobile.zy-app.zy-desktop.zy-page-chat.is-mobile-detail .zy-base>.zy-directory {display:none;}
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-conversation {position:relative;display:flex;align-items:center;box-sizing:border-box;width:100%;min-height:72px;height:72px;gap:12px;margin:0;padding:0 16px;border:0;border-radius:0;background:transparent;box-shadow:none;text-align:left;color:var(--zy-m-ink);transition:background 160ms;}
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-conversation:is(.selected,:hover) {background:transparent;}
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-conversation:is(.zy-conversation-pinned,.zy-molly-pinned) {background:var(--zy-m-pinned);}
@@ -106,7 +114,7 @@ html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-conversation strong {min-wi
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-conversation time {flex:0 0 auto;color:var(--zy-m-muted);font-size:calc(11px + var(--zy-font-adjust,0px));font-weight:400;}
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-conversation small {display:block;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--zy-m-secondary);font-size:calc(13px + var(--zy-font-adjust,0px));font-weight:400;}
 .zy-mobile .zy-system-label {display:none;}
-.zy-mobile :is(.zy-mobile-pro-label,.zy-professional-label) {display:inline-flex;align-items:center;flex-shrink:0;box-sizing:border-box;height:18px;padding:0 5px;border-radius:6px;background:var(--zy-m-pro-bg);color:var(--zy-m-pro-ink);font-size:calc(11px + var(--zy-font-adjust,0px));font-weight:600;line-height:18px;white-space:nowrap;}
+.zy-mobile :is(.zy-mobile-pro-label,.zy-professional-label) {display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;min-height:1.65em;height:auto;padding:.1em .5em;border-radius:6px;background:var(--zy-m-pro-bg);color:var(--zy-m-pro-ink);font-size:calc(11px + var(--zy-font-adjust,0px));font-weight:600;line-height:1.45;vertical-align:middle;white-space:nowrap;}
 .zy-mobile :is(.zy-mobile-contacts,.zy-mobile-groups,.zy-mobile-new-friends,.zy-mobile-contact-page) {position:relative;display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
 .zy-mobile :is(.zy-mobile-contact-entry,.zy-mobile-contact-row,.zy-mobile-group-row) {position:relative;display:flex;align-items:center;box-sizing:border-box;width:100%;gap:12px;padding:0 30px 0 16px;border:0;border-radius:0;background:transparent;color:var(--zy-m-ink);text-align:left;transition:background 160ms;}
 .zy-mobile .zy-mobile-contact-entry {height:60px;min-height:60px;}
@@ -400,7 +408,7 @@ html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-mobile-nav>button.is-active
 .zy-mobile .zy-mobile-alphabet {position:absolute;right:0;top:50%;z-index:4;display:flex;flex-direction:column;transform:translateY(-50%);}
 .zy-mobile .zy-mobile-alphabet>button {display:grid;place-items:center;width:20px;height:17px;padding:0;border:0;background:transparent;color:var(--zy-m-muted);font-size:calc(11px + var(--zy-font-adjust,0px));font-weight:600;}
 .zy-mobile .zy-mobile-alphabet>button.has-people {color:var(--zy-m-ink);}
-.zy-mobile .zy-mobile-subpage {position:absolute;z-index:35;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--zy-m-list-bg);animation:zy-m-page-in 300ms cubic-bezier(.22,.8,.25,1) both;}
+.zy-mobile .zy-mobile-subpage {position:absolute;z-index:35;inset:0;display:flex;flex-direction:column;box-sizing:border-box;padding-top:var(--zy-m-safe-top,0px);min-width:0;min-height:0;overflow:hidden;background:var(--zy-m-list-bg);animation:zy-m-page-in 300ms cubic-bezier(.22,.8,.25,1) both;}
 .zy-mobile .zy-mobile-subpage.zy-mobile-group-create {z-index:70;animation:zy-m-sheet-in 320ms cubic-bezier(.22,.8,.25,1) both;}
 .zy-mobile .zy-mobile-subpage.zy-mobile-group-create.is-closing {animation:zy-m-sheet-out 260ms cubic-bezier(.22,.8,.25,1) both;}
 .zy-mobile .zy-mobile-host-note {margin:0;padding:4px 16px;color:var(--zy-m-glass-muted);font-size:calc(12px + var(--zy-font-adjust,0px));}
@@ -522,7 +530,7 @@ html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-moments .zy-feed-stream {wi
 }
 .zy-mobile .zy-mobile-nav-items>button.is-active .lucide-compass path {fill:var(--zy-m-nav-gap);stroke:var(--zy-m-nav-gap);}
 html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-moments .zy-moments-cover {margin-bottom:32px;}
-.zy-mobile dialog.zy-mobile-group-create {box-sizing:border-box;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;border-radius:0;}
+.zy-mobile dialog.zy-mobile-group-create {box-sizing:border-box;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:var(--zy-m-safe-top,0px) 0 0;border:0;border-radius:0;}
 .zy-mobile .zy-mobile-contacts:not(.is-first-entry) .zy-mobile-entry {animation:none;}
 .zy-mobile .zy-mobile-contacts .zy-mobile-contact-group>h2.zy-mobile-contact-letter {padding:14px 16px 4px;}
 .zy-mobile .zy-mobile-groups-scroll>footer {padding:20px 16px;text-align:center;color:var(--zy-m-muted);font-size:calc(12px + var(--zy-font-adjust,0px));}
@@ -534,8 +542,8 @@ html[data-zy-theme] .zy-mobile.zy-app.zy-desktop .zy-moments .zy-moments-cover {
 /* Real chat and Moments images stay inside the mobile page. The desktop
    viewer retains its native window/top-layer behavior and original styles. */
 html[data-zy-theme] body .zy-app.zy-desktop.zy-mobile dialog.zy-moment-image-viewer.zy-mobile-image-viewer {position:absolute;inset:0;z-index:90;box-sizing:border-box;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;overflow:hidden;overscroll-behavior:contain;border:0;border-radius:0;background:var(--zy-m-chat-bg);color:var(--zy-m-ink);box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none;}
-.zy-mobile .zy-mobile-image-viewer .zy-moment-image-toolbar {top:12px;right:12px;}
-.zy-mobile .zy-mobile-image-viewer .zy-moment-image-stage {inset:60px 42px 58px;}
+.zy-mobile .zy-mobile-image-viewer .zy-moment-image-toolbar {top:calc(12px + var(--zy-m-safe-top,0px));right:12px;}
+.zy-mobile .zy-mobile-image-viewer .zy-moment-image-stage {inset:calc(60px + var(--zy-m-safe-top,0px)) 42px 58px;}
 .zy-mobile .zy-mobile-image-viewer .zy-moment-image-stage>img {width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;}
 .zy-mobile .zy-mobile-image-viewer button {color:var(--zy-m-ink);}
 .zy-mobile .zy-mobile-image-viewer button:is(:hover,:focus-visible) {color:var(--zy-m-accent);}
@@ -556,19 +564,18 @@ html[data-zy-theme] body .zy-phone-content .zy-app.zy-desktop.zy-mobile .unified
 html[data-zy-theme] body .zy-phone-content .zy-app.zy-desktop.zy-mobile .zy-mobile-profile-drawer .zy-npc-identity h3 {font-size:calc(20px + var(--zy-font-adjust,0px));font-weight:600;}
 html[data-zy-theme] body .zy-phone-content .zy-app.zy-desktop.zy-mobile .zy-mobile-profile-drawer .zy-npc-identity h3>.zy-gender {font-size:calc(14px + var(--zy-font-adjust,0px));}
 /* Secondary list pages paint the same fixed wash while covering their parent. */
-.zy-phone-mobile .zy-phone-screen:has(.zy-mobile .zy-mobile-subpage) {background:var(--zy-m-list-bg);}
-.zy-phone-mobile .zy-phone-screen:has(.zy-mobile .zy-mobile-subpage)::before {content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:var(--zy-m-list-wash);-webkit-mask-image:var(--zy-m-list-mask);mask-image:var(--zy-m-list-mask);}
 .zy-mobile .zy-mobile-subpage {isolation:isolate;background:var(--zy-m-list-bg);}
 .zy-mobile .zy-mobile-subpage::before {content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:var(--zy-m-list-wash);-webkit-mask-image:var(--zy-m-list-mask);mask-image:var(--zy-m-list-mask);}
 .zy-mobile .zy-mobile-create-row>i:not(.is-selected) {background:transparent;}
 
 /* Keep the real list below the pushed chat; reduced motion removes both layers' motion. */
-html[data-zy-theme] .zy-mobile.zy-app.zy-desktop.zy-page-chat.is-mobile-detail .zy-base>.zy-directory.zy-mobile-page-underlay {display:flex;position:absolute;inset:0;z-index:0;pointer-events:none;}
-.zy-mobile.zy-page-chat.is-mobile-detail .zy-base {position:relative;isolation:isolate;}
+html[data-zy-theme] .zy-mobile.zy-app.zy-desktop.zy-page-chat .zy-base>.zy-directory.zy-mobile-page-underlay {display:flex;position:absolute;inset:0;z-index:0;isolation:isolate;}
+html[data-zy-theme] .zy-mobile.zy-app.zy-desktop.zy-page-chat.is-mobile-detail .zy-base>.zy-directory.zy-mobile-page-underlay {pointer-events:none;}
+.zy-mobile.zy-page-chat .zy-base {position:relative;isolation:isolate;}
 .zy-mobile .zy-mobile-chat-page {position:absolute;inset:0;z-index:2;width:100%;height:100%;min-width:0;animation:zy-m-page-in 300ms cubic-bezier(.22,.8,.25,1) both;}
-.zy-mobile.is-mobile-chat-leaving :is(.zy-mobile-chat-page,.zy-mobile-subpage) {animation:zy-m-page-out 300ms cubic-bezier(.22,.8,.25,1) both;}
-.zy-mobile.is-mobile-chat-leaving .zy-mobile-page-underlay {transform:translateX(0);filter:brightness(1);}
-@media(prefers-reduced-motion:reduce) {.zy-mobile :is(.zy-mobile-chat-page,.zy-mobile-page-underlay),.zy-mobile.is-mobile-chat-leaving :is(.zy-mobile-chat-page,.zy-mobile-subpage) {animation:none;transition:none;}.zy-mobile .zy-mobile-page-underlay.is-pushed {transform:none;filter:none;}}
+.zy-mobile .zy-mobile-chat-safe-plane {position:absolute;z-index:3;top:0;left:0;right:0;height:var(--zy-m-safe-top,0px);background:var(--zy-m-chat-bg);pointer-events:none;animation:zy-m-page-in 300ms cubic-bezier(.22,.8,.25,1) both;}
+.zy-mobile.is-mobile-chat-leaving :is(.zy-mobile-chat-page,.zy-mobile-chat-safe-plane,.zy-mobile-subpage) {animation:zy-m-page-out 300ms cubic-bezier(.22,.8,.25,1) both;}
+@media(prefers-reduced-motion:reduce) {.zy-mobile :is(.zy-mobile-chat-page,.zy-mobile-chat-safe-plane,.zy-mobile-page-underlay),.zy-mobile.is-mobile-chat-leaving :is(.zy-mobile-chat-page,.zy-mobile-chat-safe-plane,.zy-mobile-subpage) {animation:none;transition:none;}.zy-mobile .zy-mobile-page-underlay.is-pushed {transform:none;filter:none;}}
 
 /* 2026-11-15 correction: all phone text moves down two points, preserving
    the existing three size settings and leaving desktop typography alone. */
@@ -580,11 +587,17 @@ html[data-zy-font-size='large'] :is(.zy-phone-mobile,.zy-mobile) {--zy-font-adju
    rather than painting the native window's four exposed corner wedges. */
 html[data-zy-mobile-native='true'],html[data-zy-mobile-native='true'] body {background:transparent;}
 
-/* One solid plane for the create sheet, status bar and island surround. */
-html[data-zy-theme] .zy-phone-mobile .zy-phone-screen:has(main.zy-mobile .zy-mobile-group-create) {background:var(--zy-m-chat-bg);}
-html[data-zy-theme] .zy-phone-mobile .zy-phone-screen:has(main.zy-mobile .zy-mobile-group-create)::before,
+/* Each covering page carries its own safe-area paint, so its departure never
+   repaints or resizes the underlying screen while an image/request is pending. */
 .zy-mobile .zy-mobile-group-create::before {content:none;}
 .zy-mobile .zy-mobile-group-create {background:var(--zy-m-chat-bg);}
+
+.zy-mobile .zy-mobile-message-banner {top:calc(7px + var(--zy-m-safe-top,0px));}
+.zy-mobile .zy-mobile-contact-copy>strong {display:flex;align-items:center;gap:6px;}
+.zy-mobile .zy-mobile-profile-drawer .zy-npc-identity h3 {display:flex;align-items:center;flex-wrap:wrap;gap:6px;}
+@media(max-width:600px) {
+ html:not([data-zy-mobile-native='true']) .zy-phone-mobile {--zy-m-safe-top:env(safe-area-inset-top,0px);}
+}
 
 /* Every back hit area starts at the screen edge. The glyph is
    centered in a 40px target, consistent across chat and covering pages. */

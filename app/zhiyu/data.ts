@@ -61,7 +61,7 @@ export type Message = {
   file?: string;
   read?: boolean;
 };
-export type Comment = { id: string; name: string; text: string; time: string; actorId?:string; replyTo?:string|null; replyToName?:string };
+export type Comment = { id: string; name: string; text: string; time: string; actorId?:string; replyTo?:string|null; replyToName?:string;media?:import('../../lib/npc/moment-comment').MomentCommentMedia };
 export type Post = {
   createdAt?: string;
   source?: 'npc-moment';
