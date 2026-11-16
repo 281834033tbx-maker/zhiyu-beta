@@ -32,8 +32,14 @@ export function normalizeTrustedNpcRequest(req:IncomingMessage,port=3100){
   if(req.headers.origin)req.headers.origin=`http://localhost:${port}`;
 }
 export function secureRequestCookie(req:IncomingMessage){const u=hostURL(originalHeaders(req).host);return !!u&&!loopback(u.hostname);}
-export function betaInviteRequired(req?:IncomingMessage){
+export function betaInviteRequired(_req?:IncomingMessage){
+  return process.env.ZHIYU_INVITE_ONLY==='1';
+}
+/** Storage isolation and ordinary-user permissions are deployment boundaries,
+ * independent from whether sign-in currently asks for an invitation. */
+export function betaServerAccountRequired(req?:IncomingMessage){
   if(process.env.ZHIYU_BETA_MODE==='1')return true;
+  if(betaInviteRequired(req))return true;
   if(!req)return false;
   const u=hostURL(originalHeaders(req).host);return !!u&&!loopback(u.hostname)&&isTrustedHost(req);
 }

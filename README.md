@@ -1,8 +1,8 @@
-# 智域手机版 · 邀请码内测
+# 智域手机版
 
-智域手机版的可部署源码，包含手机界面、邀请码进入、七位智友、聊天与群聊、动态圈、任务、Molly 报告，以及内测后台和问卷。
+智域手机版的可部署源码，包含手机界面、独立账号、七位智友、聊天与群聊、动态圈、任务、Molly 报告，以及内测后台和问卷。2026-11-16 更新：邀请码入口暂时隐藏，默认使用账号注册和登录；邀请码功能完整保留。
 
-手机入口：`/mobile`。后台入口：`/admin`。部署后，将你的 **HTTPS 域名 + `/mobile`** 和每人独立的邀请码发给内测用户，用户即可在手机浏览器进入。
+手机入口：`/mobile`。后台入口：`/admin`。部署后，将你的 **HTTPS 域名 + `/mobile`** 发给用户，用户可自行注册账号并登录，无需邀请码。仍需成年确认，每个账号的数据独立保存。
 
 本仓库包含 Node 服务和前端源码。实际供别人使用的网页地址由部署服务器提供；仓库中不附带正式邀请码、管理员密码、模型密钥或任何现有账号的聊天数据。
 
@@ -18,7 +18,7 @@ cp .env.example ../zhiyu-private/zhiyu.env
 chmod 600 ../zhiyu-private/zhiyu.env
 ```
 
-用编辑器在 `../zhiyu-private/zhiyu.env` 填入自己的模型服务凭证。首次使用时，设置创始人后台密码：
+用编辑器在 `../zhiyu-private/zhiyu.env` 填入自己的模型服务凭证。若要使用管理员后台，先设置创始人后台密码（普通用户注册不需要这一步）：
 
 ```sh
 ZHIYU_ENV_FILE=../zhiyu-private/zhiyu.env npm run beta:admin
@@ -30,11 +30,17 @@ ZHIYU_ENV_FILE=../zhiyu-private/zhiyu.env npm run beta:admin
 ZHIYU_ENV_FILE=../zhiyu-private/zhiyu.env npm start
 ```
 
-打开 [本地后台](http://127.0.0.1:3100/admin)，以创始人身份生成邀请码；打开 [本地手机界面](http://127.0.0.1:3100/mobile)，勾选成年确认并输入邀请码进入。同一个邀请码用于恢复同一个账号，请按人分发。
+打开 [本地手机界面](http://127.0.0.1:3100/mobile)，选择注册或登录即可使用。注册时勾选成年确认。无需先初始化后台或生成邀请码才能注册；后台仅供管理员使用。
+
+## 暂时隐藏邀请码，部署时重新开启
+
+配置 `ZHIYU_INVITE_ONLY=0`（不设置时也默认关闭）后，显示正常账号注册和登录。设置 `ZHIYU_INVITE_ONLY=1` 并重启服务，即恢复原来的邀请码输入和成年确认，普通注册、密码登录同时由服务器关闭；仅隐藏输入框不能替代此服务端限制。
+
+切换不删除账号、聊天或邀请码，不清空持久数据。原邀请码仍可对应原账号，停用码的限制继续有效；邀请码模式下，原普通账号的有效会话仍保留，退出后如需继续用密码登录，应先切回开放模式。管理员后台权限不随此开关放开。
 
 ## 部署到阿里云 / Linux 服务器
 
-可以让阿里云 ECS 从本仓库拉取代码，然后使用 `distribution/beta/Dockerfile` 构建运行。准备域名和 HTTPS 反向代理，配置 `ZHIYU_PUBLIC_ORIGIN`、模型凭证，并持久保存 `.npc-runtime`。
+可以让阿里云 ECS 从本仓库拉取代码，然后使用 `distribution/beta/Dockerfile` 构建运行。准备域名和 HTTPS 反向代理，配置 `ZHIYU_PUBLIC_ORIGIN`、模型凭证，并持久保存 `.npc-runtime`。按当前计划，阿里云内测上线时把私有环境文件中的 `ZHIYU_INVITE_ONLY` 改为 `1`，再重启服务；本次没有连接或部署阿里云。
 
 ```sh
 docker build -f distribution/beta/Dockerfile -t zhiyu-beta:latest .
@@ -72,5 +78,6 @@ docker exec -it zhiyu-beta npm run beta:admin
 | `npm run beta:admin` | 交互设置后台密码 |
 | `npm run beta:backup -- /安全目录/state.sqlite` | 创建一致的数据库备份 |
 | `npm run typecheck` | 检查 TypeScript |
+| `node scripts/test-beta-open-registration.mjs` | 用临时数据库验证开放注册、邀请码切换和账号隔离 |
 
 现行手机版包含整屏资料与聊天详情、悬浮导航、Scroll Reveal、轻微磁吸进入按钮、阻尼比 1 的弹簧滚动，以及图片原位展开与收回。真实手机、HTTPS 和实际模型/设备功能应在自己的部署环境验收。

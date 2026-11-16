@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { Plugin } from 'vite';
 import {readTaskCalendar, TASK_CALENDAR_CHARACTERS} from './task-calendar-reader';
 import {accountContentResetAt} from '../../lib/npc/content-reset';
-import {betaInviteRequired,claimBetaInvite,initBetaIdentity,isTrustedHost,isTrustedMutation,lookupBetaAccount,nextBetaUserNumber,normalizeTrustedNpcRequest,publicBetaAccount,secureRequestCookie,type BetaAccount} from './beta-identity';
+import {betaInviteRequired,betaServerAccountRequired,claimBetaInvite,initBetaIdentity,isTrustedHost,isTrustedMutation,lookupBetaAccount,nextBetaUserNumber,normalizeTrustedNpcRequest,publicBetaAccount,secureRequestCookie,type BetaAccount} from './beta-identity';
 import {initAccountState,serveAccountState,type AccountStateSaveHook} from './account-state';
 import {guardBetaNpcAccess} from './beta-access-policy';
 
@@ -15,6 +15,9 @@ const COOKIE = 'zhiyu_auth';
 const SESSION_AGE_SECONDS = 30 * 24 * 60 * 60;
 const USERNAME = /^[A-Za-z][A-Za-z0-9._-]{5,31}$/;
 const LEGACY_OWNER = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+// A reverse proxy can share one peer address across the small test cohort.
+// Bound expensive registration hashing without trusting forwarded IP headers.
+const REGISTER_ATTEMPTS_PER_WINDOW=100;
 
 type Account = BetaAccount;
 type Credentials = { username?: unknown; password?: unknown; confirmPassword?: unknown; code?:unknown; adultConfirmed?:unknown };
@@ -150,9 +153,10 @@ export function authLocal(options:{onStateSaved?:AccountStateSaveHook}={}): Plug
 
         if (path === '/api/auth/session' && req.method === 'GET') {
           const account = accountFor(req);
+          const registration={inviteOnly:betaInviteRequired(req),adultConfirmationRequired:betaServerAccountRequired(req)};
           return send(res, 200, account
-            ? { authenticated: true, account: publicAccount(account), claimedLegacy: account.owner_id === process.env.ZHIYU_NPC_ID,inviteOnly:betaInviteRequired(req) }
-            : { authenticated: false,inviteOnly:betaInviteRequired(req) });
+            ? { authenticated: true, account: publicAccount(account), claimedLegacy: account.owner_id === process.env.ZHIYU_NPC_ID,...registration }
+            : { authenticated: false,...registration });
         }
         if (req.method !== 'POST' || !isTrustedMutation(req)) return send(res, 403, { error: '请求来源无效' });
         if (path === '/api/auth/logout') {
@@ -184,8 +188,15 @@ export function authLocal(options:{onStateSaved?:AccountStateSaveHook}={}): Plug
           const password = typeof body.password === 'string' ? body.password : '';
           if (!USERNAME.test(username)) return send(res, 400, { error: '账号须以字母开头，包含 6-32 位字母、数字、点、下划线或短横线' });
           if (path === '/api/auth/register') {
+            const serverAccount=betaServerAccountRequired(req);
+            if(serverAccount&&body.adultConfirmed!==true)return send(res,403,{error:'请先确认你已满18岁'});
             if (password.length < 12 || Buffer.byteLength(password) > 512) return send(res, 400, { error: '密码至少 12 位，且不能过长' });
             if (password !== body.confirmPassword) return send(res, 400, { error: '两次输入的密码不一致' });
+            if(serverAccount){
+              const key=`register:${req.socket.remoteAddress||'local'}`,now=Date.now(),limit=attempts.get(key);
+              if(limit&&limit.until>now&&limit.count>=REGISTER_ATTEMPTS_PER_WINDOW)return send(res,429,{error:'注册尝试次数过多，请15分钟后重试'});
+              attempts.set(key,{count:(limit&&limit.until>now?limit.count:0)+1,until:limit&&limit.until>now?limit.until:now+15*60000});
+            }
             const salt = randomBytes(16).toString('hex');
             const digest = passwordDigest(password, salt);
             try {
@@ -196,9 +207,10 @@ export function authLocal(options:{onStateSaved?:AccountStateSaveHook}={}): Plug
               }
               const isFirst = !(db.prepare('SELECT id FROM zhiyu_accounts LIMIT 1').get());
               const legacy = process.env.ZHIYU_NPC_ID;
-              const claimedLegacy = !!(isFirst && legacy && LEGACY_OWNER.test(legacy));
-              const account: Account = { id: randomUUID(), username, owner_id: claimedLegacy ? legacy! : randomUUID(),created_at:Date.now(),display_number:nextBetaUserNumber(db),is_internal:1,is_beta:0 };
-              db.prepare('INSERT INTO zhiyu_accounts(id,username,password_salt,password_digest,owner_id,created_at,display_number,is_internal,is_beta) VALUES(?,?,?,?,?,?,?,?,?)').run(account.id, username, salt, digest, account.owner_id, account.created_at,account.display_number,1,0);
+              const claimedLegacy = !!(!serverAccount && isFirst && legacy && LEGACY_OWNER.test(legacy));
+              const account: Account = { id: randomUUID(), username, owner_id: claimedLegacy ? legacy! : randomUUID(),created_at:Date.now(),display_number:nextBetaUserNumber(db),is_internal:serverAccount?0:1,is_beta:serverAccount?1:0 };
+              db.prepare('INSERT INTO zhiyu_accounts(id,username,password_salt,password_digest,owner_id,created_at,display_number,is_internal,is_beta) VALUES(?,?,?,?,?,?,?,?,?)').run(account.id, username, salt, digest, account.owner_id, account.created_at,account.display_number,account.is_internal,account.is_beta);
+              if(serverAccount)db.prepare('INSERT INTO zhiyu_beta_adult_consent VALUES(?,?,?)').run(account.id,account.created_at,account.created_at);
               const firstUse=initializeNewAccountOpening(db,root,account.owner_id,Date.now(),claimedLegacy);
               db.exec('COMMIT');
               return issueSession(req, res, account, claimedLegacy,firstUse);
@@ -213,7 +225,8 @@ export function authLocal(options:{onStateSaved?:AccountStateSaveHook}={}): Plug
           if (limit && limit.until > Date.now() && limit.count >= 5) return send(res, 429, { error: '尝试次数过多，请稍后再试' });
           const row = db.prepare('SELECT * FROM zhiyu_accounts WHERE username=?').get(username) as (Account & { password_salt: string; password_digest: string }) | undefined;
           const candidate = passwordDigest(password, row?.password_salt || '00000000000000000000000000000000');
-          if (!row || !equalDigest(candidate, row.password_digest)) {
+          const inviteDisabled=!!row&&!!db.prepare('SELECT 1 FROM zhiyu_beta_invites WHERE account_id=? AND disabled_at IS NOT NULL').get(row.id);
+          if (!row || inviteDisabled || !equalDigest(candidate, row.password_digest)) {
             const prior = limit?.until && limit.until > Date.now() ? limit.count : 0;
             attempts.set(key, { count: prior + 1, until: Date.now() + 15 * 60 * 1000 });
             return send(res, 401, { error: '账号或密码不正确' });

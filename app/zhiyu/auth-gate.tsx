@@ -15,7 +15,7 @@ import {accountStorage,hydrateAccountStorage,flushAccountStorage,releaseAccountS
 
 type Account = { id: string; username: string; contentResetAt?:number;userNumber?:string;internal?:boolean;createdAt?:number;storageMode?:'server' };
 type AuthContextValue = { account: Account; firstUse?:boolean; logout: () => Promise<void> };
-type AuthResponse = { authenticated: boolean; account?: Account; claimedLegacy?: boolean; firstUse?:boolean; error?: string;inviteOnly?:boolean };
+type AuthResponse = { authenticated: boolean; account?: Account; claimedLegacy?: boolean; firstUse?:boolean; error?: string;inviteOnly?:boolean;adultConfirmationRequired?:boolean };
 type View = 'welcome' | 'choose' | 'login' | 'register';
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -59,6 +59,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [contentResetError,setContentResetError]=useState('');
   const [inviteOnly,setInviteOnly]=useState(false);
+  const [adultConfirmationRequired,setAdultConfirmationRequired]=useState(false);
   const [inviteCode,setInviteCode]=useState('');
   const [adultConfirmed,setAdultConfirmed]=useState(false);
 
@@ -95,7 +96,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     fetch('/api/auth/session', { credentials: 'same-origin', cache: 'no-store' })
       .then(response => response.json() as Promise<AuthResponse>)
       .then(async data => {
-        if(alive)setInviteOnly(data.inviteOnly===true||window.matchMedia('(max-width: 700px)').matches||window.location.pathname.startsWith('/mobile'));
+        if(alive){setInviteOnly(data.inviteOnly===true);setAdultConfirmationRequired(data.adultConfirmationRequired===true);}
         if (alive && data.authenticated && data.account) {
           await hydrateAccountStorage(data.account);
           if(!alive)return;
@@ -114,6 +115,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     setConfirmPassword('');
     setError('');
     setFieldErrors({});
+    setAdultConfirmed(false);
   };
 
   const editField = (field: AuthFieldName, value: string) => {
@@ -148,6 +150,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     const fields = validateAuthForm(view, { username, password, confirmPassword });
     setError('');
     if (Object.keys(fields).length) return showFieldErrors(fields, form);
+    if(view==='register'&&adultConfirmationRequired&&!adultConfirmed){setError('请先确认你已满18岁');return;}
     setBusy(true);
     setFieldErrors({});
     try {
@@ -155,7 +158,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, confirmPassword }),
+        body: JSON.stringify({ username, password, confirmPassword,...(view==='register'&&adultConfirmationRequired?{adultConfirmed}:{}) }),
       });
       const data = await response.json() as AuthResponse;
       if (!response.ok || !data.account) {
@@ -230,8 +233,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           <AuthField field="username" label="账号名称" value={username} autoComplete="username" error={fieldErrors.username} feedbackRevision={feedbackRevision} busy={busy} onChange={editField} />
           <AuthField field="password" label="密码" value={password} autoComplete={view === 'register' ? 'new-password' : 'current-password'} error={fieldErrors.password} feedbackRevision={feedbackRevision} busy={busy} onChange={editField} />
           {view === 'register' && <AuthField field="confirmPassword" label="确认密码" value={confirmPassword} autoComplete="new-password" error={fieldErrors.confirmPassword} feedbackRevision={feedbackRevision} busy={busy} onChange={editField} />}
+          {view==='register'&&adultConfirmationRequired&&<><p className="zy-invite-adult-notice">本产品仅供 18 岁以上成年人使用</p><label className="zy-invite-adult-check"><input type="checkbox" checked={adultConfirmed} onChange={event=>{setAdultConfirmed(event.target.checked);setError('');}} disabled={busy}/><span>我已满 18 岁</span></label></>}
           {error && <p className="zy-auth-error" role="alert">{error}</p>}
-          <button data-zy-magnetic-entry={view==='login'?true:undefined} className="zy-auth-primary" type="submit" disabled={busy}>{busy ? '请稍候…' : view === 'login' ? '登录' : '注册'}</button>
+          <button data-zy-magnetic-entry={view==='login'?true:undefined} className="zy-auth-primary" type="submit" disabled={busy||(view==='register'&&adultConfirmationRequired&&!adultConfirmed)}>{busy ? '请稍候…' : view === 'login' ? '登录' : '注册'}</button>
           <button className="zy-auth-switch" type="button" disabled={busy} onClick={() => switchView(view === 'login' ? 'register' : 'login')}>{view === 'login' ? '还没有账号？注册' : '已有账号？登录'}</button>
         </form>}
         {view === 'choose' && error && <p className="zy-auth-error" role="alert">{error}</p>}
