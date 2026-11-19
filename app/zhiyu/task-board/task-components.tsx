@@ -11,6 +11,7 @@ import {useAnchoredPopupPresence} from '../anchored-popup-motion';
 import type {Task, Step, Category, Npc, TaskTimer, TaskView} from './types';
 import {trainingTitlePresentation} from '../../../lib/npc/training-task-presentation';
 import {boardTimerRemainingSeconds} from './reducer';
+import {arrangementSectionForTask,arrangementSectionName} from '../../../lib/npc/arrangement-sections';
 import './task-components.css';
 
 export type TaskActions = {
@@ -93,8 +94,8 @@ function Chevron({open,label,onClick,controls}:{open:boolean;label:string;onClic
 }
 function CounterCircle({task,mode,onClick,canOperate=true}:{task:Task;mode:TaskView;onClick:()=>void;canOperate?:boolean}) {
   const done=finished(task),disabled=mode==='future'||!canOperate;
-  const label=mode==='history'?(done?'补记为没做到：':'补记为已完成：'):done?'取消完成：':task.type==='count'?`记一次 ${task.count?.perTime||0}${task.count?.unit||''}：`:task.type==='steps'?'结束任务：':'完成：';
-  return <button type="button" className={'tb-status-circle'+(done?' is-done':'')+(mode==='history'?' is-history':'')} disabled={disabled} aria-label={disabled?(mode==='future'?'未来任务，暂不可完成：':'此日期的任务暂不可完成：')+taskTitle(task):label+taskTitle(task)} aria-pressed={done} onClick={event=>{event.stopPropagation();onClick();}}>{done&&<Check size={13} strokeWidth={2.5}/>}</button>;
+  const label=mode==='history'?(done?'补记为没做到：':'补记为已完成：'):done?'取消完成：':task.type==='count'?`记一次 ${task.count?.perTime||0}${task.count?.unit||''}：`:task.type==='steps'?'结束安排：':'完成：';
+  return <button type="button" className={'tb-status-circle'+(done?' is-done':'')+(mode==='history'?' is-history':'')} disabled={disabled} aria-label={disabled?(mode==='future'?'未来安排，暂不可完成：':'此日期的安排暂不可完成：')+taskTitle(task):label+taskTitle(task)} aria-pressed={done} onClick={event=>{event.stopPropagation();onClick();}}>{done&&<Check size={13} strokeWidth={2.5}/>}</button>;
 }
 function TaskContextMenu({task,point,onClose,onPin,onEdit,trigger}:{task:Task;point:{x:number;y:number}|null;onClose:()=>void;onPin?:()=>void;onEdit?:()=>void;trigger:RefObject<HTMLButtonElement|null>}) {
   const menu=useRef<HTMLDivElement>(null);
@@ -105,7 +106,7 @@ function TaskContextMenu({task,point,onClose,onPin,onEdit,trigger}:{task:Task;po
   useLayoutEffect(()=>{if(point)menu.current?.querySelector<HTMLButtonElement>('button')?.focus();},[point]);
   const position=savedPoint;
   if(!present||!position)return null;
-  return createPortal(<div className="zy-chat-context tb-task-context" ref={menu} role="menu" aria-label="任务操作" aria-hidden={!point} inert={!point} style={{left:position.x,top:position.y}}><>{onPin&&<button type="button" role="menuitem" onClick={()=>{onPin();onClose();trigger.current?.focus();}}><Pin size={15}/>{task.pinned?'取消置顶':'置顶'}</button>}{onEdit&&<button type="button" role="menuitem" onClick={()=>{onClose();onEdit();}}><Pencil size={15}/>编辑任务</button>}</></div>,document.body);
+  return createPortal(<div className="zy-chat-context tb-task-context" ref={menu} role="menu" aria-label="安排操作" aria-hidden={!point} inert={!point} style={{left:position.x,top:position.y}}><>{onPin&&<button type="button" role="menuitem" onClick={()=>{onPin();onClose();trigger.current?.focus();}}><Pin size={15}/>{task.pinned?'取消置顶':'置顶'}</button>}{onEdit&&<button type="button" role="menuitem" onClick={()=>{onClose();onEdit();}}><Pencil size={15}/>编辑安排</button>}</></div>,document.body);
 }
 export function TaskRow(props:TaskComponentProps) {
   const {task,category,npc,mode,expanded,actions}=props;
@@ -125,7 +126,7 @@ export function TaskRow(props:TaskComponentProps) {
         onContextMenu={event=>{if(!(mode==='today'&&actions.onPin)&&!(task.manualRecord&&actions.onEdit))return;event.preventDefault();const r=event.currentTarget.getBoundingClientRect();setContextPoint({x:Math.max(8,Math.min(event.clientX||r.left+30,window.innerWidth-180)),y:Math.max(8,Math.min(event.clientY||r.bottom,window.innerHeight-96))});}}>
         <span className="tb-task-copy">
         <span className="tb-task-name">{task.pinned&&mode==='today'&&<Pin className="tb-task-pin" size={14}/>}<span>{taskTitle(task)}</span>{badgeVisible&&<span className="tb-step-badge">{steps}</span>}</span>
-        <span className="tb-task-meta"><NpcAvatar npc={npc} muted={done&&mode==='today'}/><span>{task.amount}{!isTrainingTask(task)&&task.amount&&task.tip?' · ':''}{!isTrainingTask(task)&&task.tip}</span></span>
+        <span className="tb-task-meta"><NpcAvatar npc={npc} muted={done&&mode==='today'}/><span>{arrangementSectionName(arrangementSectionForTask(task.categoryId))} · {npc.name}{task.amount?' · '+task.amount:''}{!isTrainingTask(task)&&task.tip?' · '+task.tip:''}</span></span>
         </span>
       <span className="tb-task-row-progress">
         {task.status==='paused'&&<span className="tb-missed-tag">已暂停</span>}
@@ -152,9 +153,9 @@ function TaskFooter({task,category,mode,active=false,actions,now,today,canOperat
     <button type="button" className="tb-action tb-action-brand" onClick={()=>actions.onTalk(task)}><MessageCircle size={16}/>与智友对话</button>
     <div className="tb-task-footer-right">
       {active&&task.status==='paused'&&<span className="tb-task-footnote">已暂停</span>}
-      {task.manualRecord&&actions.onEdit&&<button type="button" className="tb-action tb-action-white" onClick={()=>actions.onEdit?.(task)}><Pencil size={14}/>编辑任务</button>}
+      {task.manualRecord&&actions.onEdit&&<button type="button" className="tb-action tb-action-white" onClick={()=>actions.onEdit?.(task)}><Pencil size={14}/>编辑安排</button>}
       {mode==='today'&&canOperate&&active&&!done&&task.status==='in_progress'&&actions.onPause&&<button type="button" className="tb-action tb-action-white" onClick={()=>actions.onPause?.(task)}><Pause size={14}/>暂停</button>}
-      {mode==='future'?<span className="tb-task-footnote">{futureStartText(task,now,today)}</span>:mode==='history'?null:!canOperate?<span className="tb-task-footnote">请选择今天查看并执行此任务</span>:done?<span className="tb-task-footnote">{task.status==='ended'?'已结束':'已完成'}</span>:task.type==='steps'?<>
+      {mode==='future'?<span className="tb-task-footnote">{futureStartText(task,now,today)}</span>:mode==='history'?null:!canOperate?<span className="tb-task-footnote">请选择今天查看并执行此安排</span>:done?<span className="tb-task-footnote">{task.status==='ended'?'已结束':'已完成'}</span>:task.type==='steps'?<>
         <button type="button" className="tb-action tb-action-white" disabled={mobile&&actions.submissionPending} onClick={()=>actions.onFinish(task)}><Check size={16}/>{verb}完成</button>
         {(!active||task.status==='paused')&&<button type="button" className="tb-action tb-action-dark" onClick={()=>actions.onStart(task)}><Play size={15}/>{task.status==='paused'||hasStepProgress(task)?'继续':'开始'}{verb}</button>}
       </>:task.type==='count'&&task.count?<>
@@ -213,8 +214,8 @@ export function ActiveTaskCard(props:TaskComponentProps) {
   const {task,category,npc,expanded,actions,now,rest,timers}=props;
   const steps=task.steps||[],done=finished(task),current=task.status==='in_progress'?steps.findIndex(step=>!step.done&&!step.skipped):-1;
   const id=useId();
-  return <section className={'tb-active-card'+(done?' is-ended':'')} style={styleColor(category.color)} aria-label={'进行中任务：'+taskTitle(task)} data-active-task-id={task.id}>
-    <header className="tb-active-header"><CategoryIcon category={category} size={40}/><button type="button" className="tb-active-copy" aria-expanded={expanded} aria-controls={id} onClick={()=>actions.onExpandTask(task)}><strong>{taskTitle(task)}</strong><span className="tb-task-meta"><NpcAvatar npc={npc}/><span>{task.amount}{!isTrainingTask(task)&&task.tip?' · '+task.tip:''}</span></span></button><ProgressPill current={stepDone(task)} total={steps.length} color={category.color}/><Chevron open={expanded} controls={id} label={(expanded?'收起进行中任务：':'展开进行中任务：')+taskTitle(task)} onClick={()=>actions.onExpandTask(task)}/></header>
+  return <section className={'tb-active-card'+(done?' is-ended':'')} style={styleColor(category.color)} aria-label={'进行中安排：'+taskTitle(task)} data-active-task-id={task.id}>
+    <header className="tb-active-header"><CategoryIcon category={category} size={40}/><button type="button" className="tb-active-copy" aria-expanded={expanded} aria-controls={id} onClick={()=>actions.onExpandTask(task)}><strong>{taskTitle(task)}</strong><span className="tb-task-meta"><NpcAvatar npc={npc}/><span>{task.amount}{!isTrainingTask(task)&&task.tip?' · '+task.tip:''}</span></span></button><ProgressPill current={stepDone(task)} total={steps.length} color={category.color}/><Chevron open={expanded} controls={id} label={(expanded?'收起进行中安排：':'展开进行中安排：')+taskTitle(task)} onClick={()=>actions.onExpandTask(task)}/></header>
     <div id={id}><Disclosure open={expanded}><TrainingTaskNotes task={task}/><StepRows {...props} active/></Disclosure><Disclosure open={!expanded}><div className="tb-horizontal-steps" style={{gridTemplateColumns:`repeat(${Math.min(6,Math.max(1,steps.length))},minmax(0,1fr))`}}>{steps.map((step,index)=>{
       const isCurrent=index===current,remaining=rest?.taskId===task.id&&rest.stepId===step.id?boardTimerRemainingSeconds(rest,now):0;
       const stepTimer=timers?.[`${task.id}:${step.id}`],timerRemaining=boardTimerRemainingSeconds(stepTimer,now);
@@ -247,5 +248,5 @@ export function EndTaskConfirm({task,category,open=true,onConfirm,onCancel,ancho
   if(!present||!shown)return null;
   const total=shown.steps?.length||0,complete=stepDone(shown),unit=['fitness','recovery'].includes(cached.category?.id||'')?'动作':'步骤';
   const explanation=complete===total?`全部 ${total} 个${unit}都做完了。`:`还有 ${total-complete} 个${unit}没做，结束后按 ${complete} / ${total} 记录。`;
-  return <dialog ref={dialog} className="zy-dialog tb-end-confirm" aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event=>{event.preventDefault();if(!submitting)onCancel();}} onPointerDown={event=>{if(event.target!==event.currentTarget||event.button!==0||submitting)return;const r=event.currentTarget.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)onCancel();}}><div className="tb-end-confirm-copy"><h2 id={titleId}>结束{shown.title}？</h2><p id={descriptionId}>{explanation}</p>{onSubmit&&submitError?.id===shown.id&&<p role="alert">{submitError.text}</p>}</div><div className="tb-end-confirm-actions"><button type="button" autoFocus disabled={submitting} onClick={onCancel}>否</button>{onSubmit?<MobileSubmitButton onSubmit={async()=>{setSubmitting(true);setSubmitError(null);await onSubmit(shown);}} onComplete={()=>{setSubmitting(false);onConfirm(shown);}} onError={error=>{setSubmitting(false);setSubmitError({id:shown.id,text:reportUserFacingError(error,'save','保存任务状态')});}}>是</MobileSubmitButton>:<button type="button" onClick={()=>onConfirm(shown)}>是</button>}</div></dialog>;
+  return <dialog ref={dialog} className="zy-dialog tb-end-confirm" aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event=>{event.preventDefault();if(!submitting)onCancel();}} onPointerDown={event=>{if(event.target!==event.currentTarget||event.button!==0||submitting)return;const r=event.currentTarget.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)onCancel();}}><div className="tb-end-confirm-copy"><h2 id={titleId}>结束{shown.title}？</h2><p id={descriptionId}>{explanation}</p>{onSubmit&&submitError?.id===shown.id&&<p role="alert">{submitError.text}</p>}</div><div className="tb-end-confirm-actions"><button type="button" autoFocus disabled={submitting} onClick={onCancel}>否</button>{onSubmit?<MobileSubmitButton onSubmit={async()=>{setSubmitting(true);setSubmitError(null);await onSubmit(shown);}} onComplete={()=>{setSubmitting(false);onConfirm(shown);}} onError={error=>{setSubmitting(false);setSubmitError({id:shown.id,text:reportUserFacingError(error,'save','保存安排状态')});}}>是</MobileSubmitButton>:<button type="button" onClick={()=>onConfirm(shown)}>是</button>}</div></dialog>;
 }

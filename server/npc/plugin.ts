@@ -1,3 +1,4 @@
+import {openPrivateDialogue, commitPrivateDialogueInput, privateDialoguePrompt} from './private-dialogue-experience';
 import {initBetaUsage,persistBetaPrivateMessage} from './beta-usage-events';
 import {statusFromState} from '../../lib/npc/character-status';
 import {ChoiceReplyError, prepareChoiceReply} from './choice-reply';
@@ -95,7 +96,7 @@ export function npcLocal(testDependencies?: {
             if (closed) break;
             await runScheduledTurn(
               {
-                root,
+                root,db,
                 load: (key) => load(key, 'normal'),
                 save,
                 generate: testDependencies?.generate || generate,
@@ -154,6 +155,7 @@ export function npcLocal(testDependencies?: {
               deliveryError: s.life?.lastError || '',
               ...(mode === 'test' ? { debug: s } : {}),
             });
+            if(req.method==='GET'&&mode==='normal')openPrivateDialogue(db,root,user,'xia-xia');
             let state = load(id, mode);
             try {
               if (req.method === 'GET') return reply(200, expose(state));
@@ -278,7 +280,7 @@ export function npcLocal(testDependencies?: {
                 );
                 choiceReply?.commit();
                 if(isCall)save(id,state,rev);
-                else persistBetaPrivateMessage(db,{ownerId:user,npcId:'xia-xia',turnId:body.turnId,messages:privateHistoryMessages(state),at:Date.now()},()=>save(id,state,rev));
+                else persistBetaPrivateMessage(db,{ownerId:user,npcId:'xia-xia',turnId:body.turnId,messages:privateHistoryMessages(state),at:Date.now()},()=>commitPrivateDialogueInput(db,root,user,'xia-xia',state,incoming,()=>save(id,state,rev)));
                 reply(200, expose(state));
                 if (!testDependencies)
                   setTimeout(() => {
@@ -335,7 +337,7 @@ export function npcLocal(testDependencies?: {
                 const output = parseOutput(
                   await (testDependencies?.generate || generate)(
                     root,
-                    buildPrompt(root, state, body.text),
+                    mode==='normal'?privateDialoguePrompt(db,root,user,'xia-xia',buildPrompt(root, state, body.text),body.text):buildPrompt(root, state, body.text),
                     { requestId: body.turnId },
                   ),
                   body.text,

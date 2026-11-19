@@ -1,5 +1,6 @@
 import { publicGroupDirectory } from './character-directory';
 import type { assets, Part } from './contracts';
+import type {ArrangementMessageMetadata} from './arrangement-chat';
 
 /** IDs are requests; media URLs and transcripts are always derived by the server. */
 export type GroupSendMedia = { imageId?: string; audioId?: string; assetId?: keyof typeof assets };
@@ -25,7 +26,7 @@ export type GroupMessageQuote = {
   mentionIds?: string[];
 };
 
-export type GroupMessage = {
+export type GroupMessage = ArrangementMessageMetadata & {
   id: string;
   senderId: string;
   senderName: string;

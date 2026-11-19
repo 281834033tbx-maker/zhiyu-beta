@@ -181,7 +181,7 @@ export function authLocal(options:{onStateSaved?:AccountStateSaveHook}={}): Plug
             if(!claimed){attempts.set(key,{count:(limit&&limit.until>Date.now()?limit.count:0)+1,until:Date.now()+15*60000});return send(res,401,{error:'邀请码无效或已停用'});}
             attempts.delete(key);const now=Date.now();
             db.prepare('INSERT INTO zhiyu_beta_adult_consent VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET last_accepted_at=excluded.last_accepted_at').run(claimed.account.id,now,now);
-            const firstUse=initializeNewAccountOpening(db,root,claimed.account.owner_id,now,false);
+            const firstUse=claimed.firstUse&&initializeNewAccountOpening(db,root,claimed.account.owner_id,now,false);
             return issueSession(req,res,claimed.account,false,firstUse);
           }
           const username = typeof body.username === 'string' ? body.username.trim() : '';

@@ -12,6 +12,9 @@ import {hideMessage, isMessageHidden, useMessageVisibility} from './message-visi
 import LocalChatHeader from './local-chat-header';
 import ChatAddMenu from './chat-add-menu';
 import TaskBoard from './task-board/task-board';
+import {OPEN_ARRANGEMENT,useArrangements} from './task-board/use-arrangements';
+import {isArrangementSectionId,type ArrangementSectionId} from '../../lib/npc/arrangement-sections';
+import {arrangementMessagePreview} from '../../lib/npc/arrangement-chat';
 import {useTaskBoard} from './task-board/use-task-board';
 import {useLiveTaskImport} from './task-board/use-live-task-import';
 import DirectoryDivider from './directory-divider';
@@ -381,12 +384,15 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
   useEffect(()=>{if(!chatMenu)return;const close=(e:Event)=>{if(e.type==='keydown'&&(e as KeyboardEvent).key!=='Escape')return;if(e.type==='pointerdown'&&(e.target as Element)?.closest('.zy-chat-context'))return;setChatMenu(null);};window.addEventListener('pointerdown',close);window.addEventListener('keydown',close);return()=>{window.removeEventListener('pointerdown',close);window.removeEventListener('keydown',close);};},[chatMenu]);
 
   const [page, setPage] = useState<Page>('chat');
+  const [arrangementSection,setArrangementSection]=useState<ArrangementSectionId|'overview'>('overview');
+  const arrangements=useArrangements(account.id);
+  useEffect(()=>{const open=(event:Event)=>{const section=(event as CustomEvent<{section?:string}>).detail?.section;if(isArrangementSectionId(section)){setArrangementSection(section);setPage('tasks');}};window.addEventListener(OPEN_ARRANGEMENT,open);return()=>window.removeEventListener(OPEN_ARRANGEMENT,open);},[]);
   const [selected, setSelected] = useState('');
   const [reportQuote,setReportQuote]=useState<{characterId:string;messageId:string;text?:string;referenceId:string}|null>(null);
   const [taskConversation, setTaskConversation] = useState<{npcId:string;task:BoardTask;referenceId:string}|null>(null);
   const taskBoard=useTaskBoard(account.id);
   const professionalBoardTasks=useProfessionalTasks(account.id);
-  const hasTaskInProgress=taskBoard.ready&&taskBoard.model.tasks.some(task=>task.date===(taskBoard.model.page.selectedDate||taskBoard.model.today)&&task.status==='in_progress');
+  const hasTaskInProgress=arrangements.items.some(item=>item.status==='active')||taskBoard.ready&&taskBoard.model.tasks.some(task=>task.date===(taskBoard.model.page.selectedDate||taskBoard.model.today)&&task.status==='in_progress');
   // oxlint-disable-next-line react/react-compiler -- Reconcile account-scoped browser persistence or an external feed subscription after commit.
   useEffect(()=>{setTaskConversation(null);},[account.id]);
   // oxlint-disable-next-line react/react-compiler -- Reconcile account-scoped browser persistence or an external feed subscription after commit.
@@ -511,7 +517,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
   useEffect(()=>{
     const listener=(event:Event)=>{
       const session=(event as CustomEvent<PublicSession>).detail;
-      setMessages(old=>({...old,molly:session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:m.part.type==='choice'?choicePlainText(m.part):'text'in m.part?m.part.text:'',time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}))}));
+      setMessages(old=>({...old,molly:session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:arrangementMessagePreview(m)|| (m.part.type==='team_card'?'[图片]':m.part.type==='choice'?choicePlainText(m.part):'text'in m.part?m.part.text:''),time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}))}));
     };
     window.addEventListener('molly-session',listener);return()=>window.removeEventListener('molly-session',listener);
   },[]);
@@ -820,7 +826,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
         let newGroup=false;
         for(const message of session.messages){const event=message.secretaryEvent;if(event?.kind!=='group'||!event.groupId)continue;const key=account.id+':'+event.id;if(!receivedSecretaryGroups.current.has(key)){receivedSecretaryGroups.current.add(key);newGroup=true;}}
         if(newGroup)window.dispatchEvent(new Event('npc-groups-changed'));
-        const list = session.messages.map(message=>({id:message.id,at:message.at,mine:message.role==='user',text:message.part.type==='choice'?choicePlainText(message.part):'text' in message.part?message.part.text:'[消息]',time:new Date(message.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}));
+        const list = session.messages.map(message=>({id:message.id,at:message.at,mine:message.role==='user',text:arrangementMessagePreview(message)||(message.part.type==='team_card'?'[图片]':message.part.type==='choice'?choicePlainText(message.part):'text' in message.part?message.part.text:'[消息]'),time:new Date(message.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}));
         setMessages(previous=>previous.molly?.at(-1)?.id===list.at(-1)?.id && previous.molly?.length===list.length?previous:{...previous,molly:list});
         const key = `zhiyu-molly-last-read:${account.id}`;
         if (page==='chat' && selected==='molly') {
@@ -849,7 +855,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
         const session=await response.json() as PublicSession;
         if(!alive||!Array.isArray(session.messages))return;
         rememberStatus('xia-xia',session);setXiaPresence(session.presence||'offline');
-        const list=session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[任务] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'任务'):'text' in m.part?(m.part.text||'[图片]'):'[图片]',time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),...('assetId' in m.part?{image:npcAssets[m.part.assetId].url}:{})}));
+        const list=session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:arrangementMessagePreview(m)|| (m.part.type==='team_card'?'[图片]':m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[安排] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'安排'):'text' in m.part?(m.part.text||'[图片]'):'[图片]'),time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),...('assetId' in m.part?{image:npcAssets[m.part.assetId].url}:{})}));
         setMessages(old=>old['xia-xia']?.at(-1)?.id===list.at(-1)?.id?old:{...old,'xia-xia':list});
         const key=`zhiyu-xia-last-read:${account.id}`;
         if(page==='chat'&&selected==='xia-xia') {
@@ -876,7 +882,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
         const session=await response.json() as PublicSession;
         if(!alive||!Array.isArray(session.messages))return;
         rememberStatus('yuan-xiaoman',session);setYuanPresence(session.presence||'offline');
-        const list=session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[任务] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'任务'):'text' in m.part?(m.part.text||'[图片]'):'[图片]',time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),...('assetId' in m.part?{image:npcAssets[m.part.assetId].url}:{})}));
+        const list=session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:arrangementMessagePreview(m)|| (m.part.type==='team_card'?'[图片]':m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[安排] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'安排'):'text' in m.part?(m.part.text||'[图片]'):'[图片]'),time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),...('assetId' in m.part?{image:npcAssets[m.part.assetId].url}:{})}));
         setMessages(old=>old['yuan-xiaoman']?.at(-1)?.id===list.at(-1)?.id?old:{...old,'yuan-xiaoman':list});
         const key=`zhiyu-yuan-last-read:${account.id}`;
         if(page==='chat'&&selected==='yuan-xiaoman') {
@@ -904,7 +910,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
         if(!alive||!Array.isArray(session.messages))return;
         rememberStatus('liu',session);setLiuPresence(session.presence||'offline');
         if(session.professionalTasks)ingestProfessionalTasks(account.id,session.professionalTasks,session.revision,'liu');
-        const list=session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[任务] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'任务'):'text' in m.part?(m.part.text||'[图片]'):'[图片]',time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),...('assetId' in m.part?{image:npcAssets[m.part.assetId].url}:{})}));
+        const list=session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:arrangementMessagePreview(m)|| (m.part.type==='team_card'?'[图片]':m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[安排] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'安排'):'text' in m.part?(m.part.text||'[图片]'):'[图片]'),time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),...('assetId' in m.part?{image:npcAssets[m.part.assetId].url}:{})}));
         setMessages(old=>old['liu']?.at(-1)?.id===list.at(-1)?.id?old:{...old,'liu':list});
         const key=`zhiyu-liu-last-read:${account.id}`;
         if(page==='chat'&&selected==='liu') {
@@ -932,7 +938,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
         if(!alive||!Array.isArray(session.messages))return;
         rememberStatus('chen-nian',session);setChenPresence(session.presence||'offline');
         if(session.professionalTasks)ingestProfessionalTasks(account.id,session.professionalTasks,session.revision,'chen-nian');
-        const list=session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[任务] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'任务'):'text' in m.part?(m.part.text||'[图片]'):'[图片]',time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),...('assetId' in m.part?{image:npcAssets[m.part.assetId].url}:{})}));
+        const list=session.messages.map(m=>({id:m.id,at:m.at,mine:m.role==='user',text:arrangementMessagePreview(m)|| (m.part.type==='team_card'?'[图片]':m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[安排] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'安排'):'text' in m.part?(m.part.text||'[图片]'):'[图片]'),time:new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),...('assetId' in m.part?{image:npcAssets[m.part.assetId].url}:{})}));
         setMessages(old=>old['chen-nian']?.at(-1)?.id===list.at(-1)?.id?old:{...old,'chen-nian':list});
         const key=`zhiyu-chen-last-read:${account.id}`;
         if(page==='chat'&&selected==='chen-nian') {
@@ -964,7 +970,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
         if (!alive || !Array.isArray(session.messages)) return;
         setHePresence(session.presence || 'offline');
         const list = session.messages.map(m => ({id:m.id,at:m.at,mine:m.role==='user',
-          text:m.part.type==='choice'?choicePlainText(m.part):'text' in m.part ? m.part.text : '[图片]',
+          text:arrangementMessagePreview(m)|| (m.part.type==='team_card'?'[图片]':m.part.type==='choice'?choicePlainText(m.part):'text' in m.part ? m.part.text : '[图片]'),
           time:m.legacyTime || new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),
           ...m.legacyContent,...(m.replyTo?{replyTo:m.replyTo}:{})}));
         setMessages(old => old['he-jiawei']?.at(-1)?.id === list.at(-1)?.id && old['he-jiawei']?.length === list.length ? old : {...old,'he-jiawei':list});
@@ -1001,7 +1007,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
         setChefPresence(session.presence || 'offline');
         if(session.professionalTasks)ingestProfessionalTasks(account.id,session.professionalTasks,session.revision,'zhou-chef');
         const list = session.messages.map(m => ({id:m.id,at:m.at,chefApiPreview:true,mine:m.role==='user',
-          text:m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[任务] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'任务'):'text' in m.part ? m.part.text : '[图片]',
+          text:arrangementMessagePreview(m)|| (m.part.type==='team_card'?'[图片]':m.part.type==='choice'?choicePlainText(m.part):m.part.type==='professional_task'?'[安排] '+(session.professionalTasks?.find(task=>m.part.type==='professional_task'&&task.id===m.part.taskId)?.title||'安排'):'text' in m.part ? m.part.text : '[图片]'),
           time:m.legacyTime || new Date(m.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),
           ...m.legacyContent,...(m.replyTo?{replyTo:m.replyTo}:{})}));
         setMessages(old => old['zhou-chef']?.at(-1)?.id === list.at(-1)?.id && old['zhou-chef']?.length === list.length ? old : {...old,'zhou-chef':list});
@@ -1433,7 +1439,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
   const ProfileContainer=mobile?MobileProfileDrawer:ProfilePopover;
   const mobileIncoming=mobile?[...[molly,...people].map(p=>{const last=visibleMessages[p.id]?.at(-1);return {id:p.id,person:displayPerson(p),text:last?.text||'',messageId:last&&!last.mine?last.id:''};}),...visibleGroups.map(g=>{const last=g.messages.at(-1);return {id:g.id,person:groupPerson(g),text:groupPreview(g),messageId:last&&last.senderId!=='user'?last.id:''};})]:[];
   const personNames=Object.fromEntries([molly,...people].map(item=>[item.id,item.name]));
-  const pageTitles: Record<Page, string> = {chat:'消息', contacts:'智友', tasks:'任务', moments:'动态', pets:'多功能',me:'我'};
+  const pageTitles: Record<Page, string> = {chat:'消息', contacts:'智友', tasks:'安排', moments:'动态', pets:'多功能',me:'我'};
   const mobileFirstEntry=useMobileFirstEntry(account.id+':'+page);
   const renderClient = () => (
     <main className={'zy-app zy-page-' + page + ' zy-desktop' + (mobile ? ' zy-mobile' : ' zy-layout-classic') + (mobileDetail ? ' is-mobile-detail' : '') + (mobileOverlayDetail?' is-mobile-overlay-detail':'') + (mobile&&!mobileDetail&&['chat','contacts','me'].includes(page)?' is-mobile-list':'') + (liquidBaseEnabled ? ' has-liquid-base-plate' : '') + (mobile&&mobileFirstEntry?' is-first-entry':'') + (mobile&&mobileLeaving?' is-mobile-chat-leaving':'')}>
@@ -1477,9 +1483,9 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
             <Users fill={page === 'contacts' ? 'currentColor' : 'none'} />
             <span className="zy-mobile-nav-label" aria-hidden="true">智友</span>
           </IconButton>
-          <IconButton label={hasTaskInProgress?'任务，有正在进行的任务':'任务'} pressed={page === 'tasks'} className={page === 'tasks' ? 'active' : ''} onClick={() => navigateMain('tasks')}>
-            <span className="zy-nav-glyph"><CalendarCheck/>{hasTaskInProgress&&<RailNotificationDot label="有正在进行的任务"/>}</span>
-            <span className="zy-mobile-nav-label" aria-hidden="true">任务</span>
+          <IconButton label={hasTaskInProgress?'安排，有正在进行的安排':'安排'} pressed={page === 'tasks'} className={page === 'tasks' ? 'active' : ''} onClick={() => navigateMain('tasks')}>
+            <span className="zy-nav-glyph"><CalendarCheck/>{hasTaskInProgress&&<RailNotificationDot label="有正在进行的安排"/>}</span>
+            <span className="zy-mobile-nav-label" aria-hidden="true">安排</span>
           </IconButton>
           <IconButton
             label={momentBadge ? '动态，有新内容' : '动态'}
@@ -1796,7 +1802,7 @@ export default function Zhiyu({mode = 'desktop'}: {mode?: 'desktop' | 'mobile'})
           </section>
         )}
         {page === 'me'&&mobile?<MobileMePage self={self} accountId={account.id} onEdit={anchor=>openProfile(self,anchor)} settings={<AppSettings inline mobile desktop={false} person={self} username={account.username} onLogout={logout} onClose={()=>{}}/>}/>:page === 'me'&&<section className="zy-me-page" aria-label="我"><header><h1>我</h1></header><div className="zy-me-card"><button type="button" className="zy-me-avatar" onClick={event=>openProfile(self,event.currentTarget)} aria-label="编辑我的资料"><Avatar person={self} size={60}/></button><h2>{self.nickname||self.name}</h2><p>{self.bio}</p><button type="button" onClick={event=>openProfile(self,event.currentTarget)}>编辑资料</button></div><button className="zy-me-settings" type="button" onClick={()=>setModal({kind:'settings'})}>设置<ChevronRight size={18}/></button></section>}
-        {page === 'tasks' && <TaskBoard mobile={mobile} key={account.id} board={taskBoard} onCommitRecord={taskBoard.commitRecord} dirWidth={dirWidth} onDirectoryWidthChange={setDirWidth} onOpenConversation={(npcId,task)=>{const target=[molly,...people].find(item=>item.id===npcId);if(target){if(task){setReportQuote(null);setTaskConversation({npcId,task,referenceId:crypto.randomUUID()});}else setTaskConversation(null);openChat(displayPerson(target));}}}/>}
+        {page === 'tasks' && <TaskBoard initialSection={arrangementSection} mobile={mobile} key={account.id} board={taskBoard} onCommitRecord={taskBoard.commitRecord} dirWidth={dirWidth} onDirectoryWidthChange={setDirWidth} onOpenConversation={(npcId,task)=>{const target=[molly,...people].find(item=>item.id===npcId);if(target){if(task){setReportQuote(null);setTaskConversation({npcId,task,referenceId:crypto.randomUUID()});}else setTaskConversation(null);openChat(displayPerson(target));}}}/>}
         {page === 'pets' && <PetPage accountId={account.id} dirWidth={dirWidth} onDirectoryWidthChange={setDirWidth} />}
         {page === 'moments' && (
           <section className="zy-moments" ref={feed} aria-label="好友动态">

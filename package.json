@@ -13,7 +13,10 @@
     "beta:start": "NODE_ENV=production node dist/beta/server.mjs",
     "beta:admin": "node scripts/init-beta-admin.mjs",
     "beta:backup": "node distribution/beta/backup.mjs",
-    "typecheck": "tsc --noEmit --incremental false"
+    "typecheck": "tsc --noEmit --incremental false",
+    "npc:exam": "node scripts/npc-exam.mjs",
+    "test:dialogue": "node scripts/test-dialogue-layering.mjs && node scripts/test-dialogue-execution-guard.mjs && node scripts/test-dialogue-execution-receipts.mjs",
+    "test:opening": "node scripts/test-openings.mjs && node scripts/test-opening-preferences-runtime.mjs && node scripts/test-beta-open-registration.mjs"
   },
   "dependencies": {
     "react": "19.2.6",

@@ -6,7 +6,7 @@ import type {TaskBoardAction} from './types';
 import {applyManualTaskRecord,parseManualTaskRecord} from './manual-task-record';
 import {getActiveAccountStorageIdentity} from '../account-storage';
 
-const CLOUD_MERGE_CONFLICT='任务已在其他设备更新，本次后续操作尚未保存。请刷新页面载入云端版本，再重新执行这些操作。';
+const CLOUD_MERGE_CONFLICT='安排已在其他设备更新，本次后续操作尚未保存。请刷新页面载入云端版本，再重新执行这些操作。';
 type CloudGate={epoch:number;needsHydrate:boolean;blocked:boolean};
 
 export function useTaskBoard(accountId:string,source:TaskBoardDataSource=mockTaskBoardSource) {
@@ -67,7 +67,7 @@ export function useTaskBoard(accountId:string,source:TaskBoardDataSource=mockTas
       await saveQueue.current.catch(()=>{});
       if(!current())return;
       try {const value=await source.load(accountId);if(current()){hydrate(value);setStorageError('');}}
-      catch {if(current()){hydrate(source===mockTaskBoardSource?taskBoardFallback(accountId):createEmptyTaskBoard());setStorageError('任务记录暂时无法读取。');}}
+      catch {if(current()){hydrate(source===mockTaskBoardSource?taskBoardFallback(accountId):createEmptyTaskBoard());setStorageError('安排记录暂时无法读取。');}}
     })();
     return()=>{alive=false;};
   },[accountId,source,cloudGate]);
@@ -90,7 +90,7 @@ export function useTaskBoard(accountId:string,source:TaskBoardDataSource=mockTas
           if(!current())return;
           if(queued!==saveQueue.current||before!==modelRef.current||importing.current){pending=true;continue;}
           gate.needsHydrate=false;modelRef.current=value;dispatchModel({type:'hydrate',model:value});setStorageError('');
-        }catch{if(current())setStorageError('合并后的任务记录暂时无法读取，请重新加载任务页。');}
+        }catch{if(current())setStorageError('合并后的安排记录暂时无法读取，请重新加载安排页。');}
       }}finally{working=false;}
     };
     const onStorage=(event:StorageEvent)=>{
@@ -103,12 +103,12 @@ export function useTaskBoard(accountId:string,source:TaskBoardDataSource=mockTas
   useEffect(()=>{
     if(!ready||loadedSourceRef.current!==source||model!==modelRef.current||importing.current?.owner===accountId&&importing.current.source===source)return;
     let alive=true;
-    void save(accountId,model).then(()=>{if(alive)setStorageError('');}).catch(error=>{if(alive)setStorageError(error instanceof Error&&error.message===CLOUD_MERGE_CONFLICT?CLOUD_MERGE_CONFLICT:'任务记录未保存，当前页面仍可继续使用。');});
+    void save(accountId,model).then(()=>{if(alive)setStorageError('');}).catch(error=>{if(alive)setStorageError(error instanceof Error&&error.message===CLOUD_MERGE_CONFLICT?CLOUD_MERGE_CONFLICT:'安排记录未保存，当前页面仍可继续使用。');});
     return()=>{alive=false;};
   },[accountId,model,ready,save,source]);
   const commitRecord=useCallback(async(payload:unknown)=>{
-    if(!accountId||accountRef.current!==accountId||loadedRef.current!==accountId||sourceRef.current!==source||loadedSourceRef.current!==source)throw Error('任务记录尚未载入，请稍后再试。');
-    if(importing.current)throw Error('上一份任务记录正在保存，请稍后再试。');
+    if(!accountId||accountRef.current!==accountId||loadedRef.current!==accountId||sourceRef.current!==source||loadedSourceRef.current!==source)throw Error('安排记录尚未载入，请稍后再试。');
+    if(importing.current)throw Error('上一份安排记录正在保存，请稍后再试。');
     const record=parseManualTaskRecord(payload);
     const base=modelRef.current,next=applyManualTaskRecord(base,record),scope=scopeRef.current;
     let finishTransaction:()=>void=()=>{};
@@ -138,7 +138,7 @@ export function useTaskBoard(accountId:string,source:TaskBoardDataSource=mockTas
       settled=transaction.actions.slice(consumed).reduce(taskBoardReducer,settled);
       if(current()){
         modelRef.current=settled;dispatchModel({type:'hydrate',model:settled});
-        setStorageError(error instanceof Error&&error.message===CLOUD_MERGE_CONFLICT?CLOUD_MERGE_CONFLICT:imported?'记录已导入，但期间操作未全部保存，请检查后重试。':'任务记录未导入，请检查保存状态后重试。');
+        setStorageError(error instanceof Error&&error.message===CLOUD_MERGE_CONFLICT?CLOUD_MERGE_CONFLICT:imported?'记录已导入，但期间操作未全部保存，请检查后重试。':'安排记录未导入，请检查保存状态后重试。');
       }
       throw error;
     } finally {
@@ -150,8 +150,8 @@ export function useTaskBoard(accountId:string,source:TaskBoardDataSource=mockTas
   /** Explicit phone submission. The ordinary dispatch/effect and record-import
    * paths remain intact; success means this owner's source accepted the action. */
   const commitAction=useCallback(async(action:{type:'finish'|'complete-count'|'toggle-status';taskId:string;now:number})=>{
-    if(!accountId||accountRef.current!==accountId||loadedRef.current!==accountId||sourceRef.current!==source||loadedSourceRef.current!==source)throw Error('任务记录尚未载入，请稍后再试。');
-    if(importing.current)throw Error('任务记录正在保存，请稍后再试。');
+    if(!accountId||accountRef.current!==accountId||loadedRef.current!==accountId||sourceRef.current!==source||loadedSourceRef.current!==source)throw Error('安排记录尚未载入，请稍后再试。');
+    if(importing.current)throw Error('安排记录正在保存，请稍后再试。');
     const base=modelRef.current,next=taskBoardReducer(base,action),scope=scopeRef.current;
     let finishTransaction:()=>void=()=>{};
     const finished=new Promise<void>(resolve=>{finishTransaction=resolve;});
@@ -174,7 +174,7 @@ export function useTaskBoard(accountId:string,source:TaskBoardDataSource=mockTas
       settled=transaction.actions.slice(consumed).reduce(taskBoardReducer,settled);
       if(current()){
         modelRef.current=settled;dispatchModel({type:'hydrate',model:settled});
-        setStorageError(error instanceof Error&&error.message===CLOUD_MERGE_CONFLICT?CLOUD_MERGE_CONFLICT:saved?'操作已保存，但期间修改未全部保存，请检查后重试。':'任务状态未保存，请稍后重试。');
+        setStorageError(error instanceof Error&&error.message===CLOUD_MERGE_CONFLICT?CLOUD_MERGE_CONFLICT:saved?'操作已保存，但期间修改未全部保存，请检查后重试。':'安排状态未保存，请稍后重试。');
       }
       throw error;
     } finally {

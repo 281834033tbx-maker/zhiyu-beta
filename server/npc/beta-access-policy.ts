@@ -1,7 +1,7 @@
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import type {BetaAccount} from './beta-identity';
 
-type RoutePolicy={allowed:boolean;actions?:ReadonlySet<string>};
+type RoutePolicy={allowed:boolean;actions?:ReadonlySet<string>;largeSnapshot?:boolean};
 const deny:RoutePolicy={allowed:false},allow:RoutePolicy={allowed:true};
 const ordinary=new Set(['send','clear','typing','read','retry']);
 const professional=['task_step','task_status','task_timer','task_step_date','task_session_start','task_session_complete'];
@@ -13,6 +13,9 @@ const groupActions=new Set(['remember','create','rename','settings','members','c
 // The report card component retains these historical action names for genuine
 // scheduled reports too. The service checks actual owner + report provenance.
 const secretaryActions=new Set(['settings','locate-city','city','report-quote','report-demo-action','report-demo-quote','usage','completions']);
+const arrangementActions=new Set(['offer','revoke','complete','move','step','preference']);
+const dialoguePreferenceActions=new Set(['address','reset-address','supervision','board-snapshot']);
+const dialoguePreferenceNpcs=new Set([...Object.keys(chatActions),'molly-system-secretary']);
 const uuid='[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
 const mediaFile=new RegExp(`^/api/npc/media/${uuid}\\.(?:jpg|png|webp|gif)$`,'i');
 const audioFile=new RegExp(`^/api/npc/audio/${uuid}\\.(?:wav|mp3|mp4|ogg|webm)$`,'i');
@@ -29,6 +32,14 @@ export function betaNpcRoutePolicy(rawUrl:string,method:string):RoutePolicy{
     return method==='POST'?{allowed:true,actions:chatActions[chat]}:deny;
   }
   if(path==='/api/npc/task-calendar')return method==='GET'&&[...url.searchParams.keys()].every(key=>key==='npc')&&url.searchParams.getAll('npc').length===1?allow:deny;
+  if(path==='/api/npc/arrangements'){
+    if(method==='GET')return [...url.searchParams.keys()].every(key=>key==='status')&&url.searchParams.getAll('status').length<=1&&url.searchParams.getAll('status').every(value=>value==='active'||value==='all')?allow:deny;
+    return method==='POST'&&!url.search?{allowed:true,actions:arrangementActions}:deny;
+  }
+  if(path==='/api/npc/dialogue-preferences'){
+    if(method==='GET')return [...url.searchParams.keys()].every(key=>key==='npc')&&url.searchParams.getAll('npc').length<=1&&url.searchParams.getAll('npc').every(id=>dialoguePreferenceNpcs.has(id))?allow:deny;
+    return method==='POST'&&!url.search?{allowed:true,actions:dialoguePreferenceActions,largeSnapshot:true}:deny;
+  }
   if(url.search)return deny;
   if(path==='/api/npc/groups')return method==='GET'?allow:method==='POST'?{allowed:true,actions:groupActions}:deny;
   if(path==='/api/npc/secretary')return method==='GET'?allow:method==='POST'?{allowed:true,actions:secretaryActions}:deny;
@@ -44,15 +55,16 @@ export function betaNpcRoutePolicy(rawUrl:string,method:string):RoutePolicy{
   return deny;
 }
 class PolicyError extends Error{constructor(message:string,public status:number){super(message);}}
-async function verifyActionAndReplay(req:IncomingMessage,actions:ReadonlySet<string>){
+async function verifyActionAndReplay(req:IncomingMessage,actions:ReadonlySet<string>,largeSnapshot=false){
   if(!req.headers['content-type']?.toLowerCase().startsWith('application/json'))throw new PolicyError('请发送 JSON 请求',415);
   const chunks:Buffer[]=[];let size=0;
-  for await(const raw of req){const chunk=Buffer.isBuffer(raw)?raw:Buffer.from(raw);size+=chunk.length;if(size>128*1024)throw new PolicyError('请求内容过长',413);chunks.push(chunk);}
+  for await(const raw of req){const chunk=Buffer.isBuffer(raw)?raw:Buffer.from(raw);size+=chunk.length;if(size>(largeSnapshot?8*1024*1024:128*1024))throw new PolicyError('请求内容过长',413);chunks.push(chunk);}
   const bytes=Buffer.concat(chunks);let body:unknown;
   try{body=JSON.parse(bytes.toString('utf8'));}catch{throw new PolicyError('请求内容无效',400);}
   if(!body||typeof body!=='object'||Array.isArray(body))throw new PolicyError('请求内容无效',400);
   const action=(body as {action?:unknown}).action;
   if(typeof action!=='string'||!actions.has(action))throw new PolicyError('内测账号不能使用维护或演示操作',403);
+  if(size>128*1024&&!(largeSnapshot&&action==='board-snapshot'))throw new PolicyError('请求内容过长',413);
   // Existing ordinary NPC handlers all read JSON with for-await. Replay exactly
   // the original bytes once, so their normal validators retain full authority.
   let replayed=false;
@@ -66,5 +78,5 @@ export function guardBetaNpcAccess(req:IncomingMessage,res:ServerResponse,accoun
   const reject=(status:number,error:string)=>{if(res.writableEnded)return;res.statusCode=status;res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');res.end(JSON.stringify({error}));};
   if(!policy.allowed)return reject(403,'内测账号不能使用维护、调试或全局设置接口');
   if(!policy.actions)return proceed();
-  void verifyActionAndReplay(req,policy.actions).then(proceed).catch(error=>reject(error instanceof PolicyError?error.status:400,error instanceof PolicyError?error.message:'请求暂时无法处理'));
+  void verifyActionAndReplay(req,policy.actions,policy.largeSnapshot).then(proceed).catch(error=>reject(error instanceof PolicyError?error.status:400,error instanceof PolicyError?error.message:'请求暂时无法处理'));
 }

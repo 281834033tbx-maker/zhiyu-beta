@@ -13,12 +13,15 @@ import { chefLocal } from '../npc/zhou-chef-plugin';
 import { authLocal } from '../npc/auth-plugin';
 import { groupChatsLocal } from '../npc/groups-plugin';
 import { secretaryLocal } from '../npc/secretary-plugin';
+import {arrangementsLocal} from '../npc/arrangements-plugin';
+import {npcOpeningLocal} from '../npc/opening-plugin';
+import {dialoguePreferencesLocal} from '../npc/dialogue-preferences-plugin';
 import { dialogueHealth } from '../npc/dialogue-health';
 import { localServiceHealth } from '../npc/local-service-health';
 import { npcQwenLocalWorker } from '../npc/qwen-local-worker';
 import { npcRealtimeSpeechSettings } from '../npc/realtime-speech-settings';
 import { npcRealtimeSpeechGateway } from '../npc/realtime-speech-gateway';
-import { loadXiaomanRealtimeContext, recordXiaomanRealtimeEvent } from '../npc/realtime-speech-context';
+import { loadXiaomanRealtimeContext, updateXiaomanRealtimeContext, recordXiaomanRealtimeEvent } from '../npc/realtime-speech-context';
 import {betaAnalyticsLocal} from '../npc/beta-analytics-plugin';
 import {betaSurveysLocal} from '../npc/beta-surveys-plugin';
 import {noteBetaSurveyOpen} from '../npc/beta-survey-store';
@@ -33,12 +36,15 @@ export function zhiyuRuntimePlugins():Plugin[]{return [
       authLocal({onStateSaved:recordBetaBoardState}),
       betaAnalyticsLocal({onOpen:noteBetaSurveyOpen}),
       betaSurveysLocal({onSubmitted:(db,event)=>{recordBetaEvent(db,{accountId:event.accountId,eventId:'survey:'+event.submissionId,type:'survey_submitted',at:event.at,meta:{surveyId:event.surveyId}});}}),
+      arrangementsLocal(),
+      dialoguePreferencesLocal(),
+      npcOpeningLocal(),
       groupChatsLocal(),
       secretaryLocal(),
       // Realtime credentials/context stay in the local Node service; the
       // browser uses an authenticated PCM socket for Xiaoman's voice calls.
       npcRealtimeSpeechSettings(),
-      npcRealtimeSpeechGateway({ loadContext: loadXiaomanRealtimeContext, recordEvent: recordXiaomanRealtimeEvent }),
+      npcRealtimeSpeechGateway({ loadContext: loadXiaomanRealtimeContext, updateContextForInput:updateXiaomanRealtimeContext, recordEvent: recordXiaomanRealtimeEvent }),
       npcMedia(),
       npcAudio(),
       npcVoiceWorker(),

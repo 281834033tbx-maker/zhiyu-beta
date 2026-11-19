@@ -15,6 +15,8 @@ import {reportDate} from '../../lib/npc/molly-reports';
 import type {ReportInputs} from './secretary-reports';
 import type {WeatherProvider} from './weather-provider';
 import {buildScheduledDailyBrief,buildScheduledWeeklyReport} from './scheduled-report-templates';
+import {ArrangementStore} from './arrangements-store';
+import {addArrangementsToBrief} from './arrangement-brief';
 
 export type ScheduledReportSettings=SecretarySettings&{dailyEffectiveSince:number;weeklyEffectiveSince:number};
 export type ScheduledReportKind='daily'|'weekly';
@@ -91,7 +93,8 @@ export class ScheduledMollyReports {
    // Re-read facts after asynchronous providers and re-read Molly again inside the
    // commit. Neither another window nor an in-flight reply may be overwritten.
    const input=this.deps.inputs(owner);if(input.snapshot.readErrors)throw Error('任务记录暂时无法读取');
-   const value=kind==='daily'?buildScheduledDailyBrief(input,{date:occurrence.date,city:currentSettings.city,weather}):buildScheduledWeeklyReport(input,occurrence);
+   const arrangements=new ArrangementStore(this.db,this.deps.now);
+   const value=kind==='daily'?addArrangementsToBrief(buildScheduledDailyBrief(input,{date:occurrence.date,city:currentSettings.city,weather}),arrangements,owner):buildScheduledWeeklyReport(input,occurrence);
    if(this.stopped)return false;
    this.db.exec('BEGIN IMMEDIATE');
    try{
@@ -103,6 +106,7 @@ export class ScheduledMollyReports {
     scheduleDelivery(row.state.messages,from,now,now,{characterId:'molly'});
     this.save(row);
     this.db.prepare('INSERT INTO npc_molly_scheduled_reports VALUES(?,?,?,?,?,?)').run(owner,kind,occurrence.period,occurrence.due,cardId,now);
+    if(kind==='daily')arrangements.markBriefDelivered(owner,occurrence.date);
     this.db.exec('COMMIT');this.retryAt.delete(key);return true;
    }catch(error){this.db.exec('ROLLBACK');throw error;}
   }catch(error){this.retryAt.set(key,this.deps.now()+30000);throw error;}

@@ -1,4 +1,6 @@
-import {normalizeDialogueOutput,DialogueOutputGuardError} from '../../lib/npc/dialogue-output-guard';
+import {normalizeDialogueOutput,DialogueOutputGuardError,isDialogueCrisisInput,DIALOGUE_CRISIS_FALLBACK,canFinalizeDialogueAfterFailedRewrite} from '../../lib/npc/dialogue-output-guard';
+import {groupDialogueExecutionReceipts} from './dialogue-execution-receipts';
+import {arrangementGenerationPrompt,stripArrangementRecognition,rememberArrangementRecognition} from './arrangement-generation';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -30,6 +32,8 @@ export type GroupDialogueContext = {
   /** Resolved from owner-owned current/quoted messages, never accepted from the client. */
   images?: string[]; imageMessageIds?: string[];
   socialContexts?: GroupSocialContext[];
+  /** Authenticated host snapshots only; never accepted from model/client JSON. */
+  characterExperience?: Record<string, string>;
   /** Frozen for this user message after semantic routing, never inherited. */
   participationPlan?:GroupParticipationPlan;
 };
@@ -47,11 +51,42 @@ export type GroupDialogueRunner = (root: string, context: GroupDialogueContext) 
 // Text review reparses its final object and therefore recomputes this set.
 const operationalSpeakers=new WeakMap<GroupDialogueOutput,ReadonlySet<string>>();
 const participationPlans=new WeakMap<GroupDialogueOutput,GroupParticipationPlan>();
+// Only the real output guard can register this provenance. Model JSON cannot
+// waive a required reply or leave a deleted speaker's executable authority.
+const speechSuppressions=new WeakMap<GroupDialogueOutput,ReadonlySet<string>>();
+export function groupSuppressedSpeech(output:GroupDialogueOutput):ReadonlySet<string>{return speechSuppressions.get(output)||new Set();}
 export function groupOperationalSpeakers(output:GroupDialogueOutput):ReadonlySet<string>|undefined {
   return operationalSpeakers.get(output);
 }
 export function groupParticipationPlan(output:GroupDialogueOutput):GroupParticipationPlan|undefined {
   const plan=participationPlans.get(output);return plan?structuredClone(plan):undefined;
+}
+
+/** Only this actual user turn is safety context; goals, quotes and timed jobs
+ * must not revive a crisis from an earlier conversation. */
+function currentGroupUserText(context:GroupDialogueContext):string {
+  if(context.kind!=='message'||context.incoming?.senderId!=='user')return '';
+  const part=context.incoming.part;
+  if(part?.type==='voice')return part.text||'';
+  return context.incoming.text||'';
+}
+
+/** A safety reply is speech only, never a routing/transaction permission.
+ * The caller still filters changed/removed join instances before delivery. */
+function groupSafetySpeech(context:GroupDialogueContext,messages?:GroupDialogueOutput['messages']):GroupDialogueOutput {
+  const members=new Set(context.group.members.filter(member=>member.id!=='user').map(member=>member.id));
+  const sender=context.incoming?.mentionIds?.find(id=>members.has(id))
+    ||(members.has('molly')?'molly':members.values().next().value);
+  if(!sender)throw new DialogueOutputGuardError(['群内没有可发送危机支持的成员']);
+  const result:GroupDialogueOutput={messages:messages||[{senderId:sender,text:DIALOGUE_CRISIS_FALLBACK,mentionIds:[]}]};
+  for(const message of result.messages){
+    if(!members.has(message.senderId))throw new DialogueOutputGuardError(['群危机回复人物无效']);
+    assertGroupCharacterOutput(context.group,message);
+  }
+  operationalSpeakers.set(result,new Set());
+  // Do not attach a model participation plan: its silence/closed/required
+  // obligations cannot suppress urgent support or restore task authority.
+  return result;
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -107,7 +142,7 @@ export function groupSocialSpeakerIds(context:GroupDialogueContext):string[] {
     && !item.availability.doNotDisturb && item.availability.proactiveEnabled).map(item=>item.characterId))];
 }
 
-export function parseGroupDialogue(raw: unknown, context: GroupDialogueContext, participation: GroupParticipationPlan|string[]): GroupDialogueOutput {
+export function parseGroupDialogue(raw: unknown, context: GroupDialogueContext, participation: GroupParticipationPlan|string[], suppressedRequired:ReadonlySet<string>=new Set()): GroupDialogueOutput {
   const value = object(raw);
   if (['choice', 'choices', 'options', 'selection', 'task', 'tasks', 'professional_task', 'professionalTask', 'taskProposals', 'actions']
     .some(key => value[key] !== undefined && value[key] !== null)) throw new Error('群聊不支持选择或直接任务消息协议');
@@ -130,7 +165,7 @@ export function parseGroupDialogue(raw: unknown, context: GroupDialogueContext, 
   const usedSocialPermission=new Set<string>();
   const actualOperationalSpeakers=new Set<string>();
   const naturalConversation = legacy && context.kind === 'message' && !context.incoming?.mentionIds?.length;
-  const required = plan?plan.requiredReplyIds:requiredGroupMentionReplies(context);
+  const required = (plan?plan.requiredReplyIds:requiredGroupMentionReplies(context)).filter(id=>!suppressedRequired.has(id));
   const prior: { senderId: string }[] = [];
   if (!Array.isArray(value.messages) || value.messages.length > 12) throw new Error('群回复消息数量无效');
   const messages = value.messages.map((rawMessage, index) => {
@@ -147,7 +182,7 @@ export function parseGroupDialogue(raw: unknown, context: GroupDialogueContext, 
       || (!permitted.has(message.senderId) && !followsConversation) || !text(message.text)) throw new Error('群回复人物或内容无效');
     assertGroupCharacterOutput(context.group,message);
     if (context.kind === 'reminder' && message.senderId !== 'zhou-chef') throw new Error('准备提醒由厨师发送');
-    if (context.kind === 'opening' && index === 0 && message.senderId !== 'molly') throw new Error('Molly必须先主持开场');
+    if (context.kind === 'opening' && index === 0 && message.senderId !== 'molly'&&!suppressedRequired.has('molly')) throw new Error('Molly必须先主持开场');
     const mentionIds = message.mentionIds === undefined ? [] : message.mentionIds;
     if (!Array.isArray(mentionIds) || mentionIds.length > members.size || mentionIds.some(id => typeof id !== 'string' || !members.has(id))) throw new Error('群回复@成员无效');
     // Real @ remains an explicit task handoff. Without @, a short exchange with
@@ -229,6 +264,7 @@ export function parseGroupDialogue(raw: unknown, context: GroupDialogueContext, 
   if (unrecorded.length) throw new MissingGroupSocialExpressionError(unrecorded);
   operationalSpeakers.set(result,actualOperationalSpeakers);
   if(plan)participationPlans.set(result,structuredClone(plan));
+  if(suppressedRequired.size)speechSuppressions.set(result,new Set(suppressedRequired));
   return result;
 }
 
@@ -302,6 +338,8 @@ export async function generateGroupDialogue(root: string, context: GroupDialogue
   // call. An edit on disk during routing must not change this turn's review.
   context = structuredClone(context);
   delete context.participationPlan;
+  const userText=currentGroupUserText(context);
+  const crisis=isDialogueCrisisInput(userText);
   const accountabilityRules=groupChatAccountabilityRules(context.group);
   const frozenGroupRules = groupRules(root) + '\n' + characterDialogueOutputRules
     + '\n群聊仍只支持既有文字协议。三位陪伴人物没有正式执行任务、专业计划或系统定时提醒的权限；不能替用户分配或创建任务。本群复核在实际有陪伴发言时按下文协议增加companionOutputCheck，陪伴任务或选项语义错误须verdict=redraft。'
@@ -320,9 +358,11 @@ export async function generateGroupDialogue(root: string, context: GroupDialogue
     catch { /* Best effort diagnostics. */ }
   };
   const runStage = async (stage: string, input: string) => {
+    if(stage==='generation')input+=arrangementGenerationPrompt(userText,context.now);
     const row = { stage, inputHash: digest(input), inputBytes: Buffer.byteLength(input), outputHash: undefined as string | undefined };
     stages.push(row); saveTrace();
-    const result = await run(root, input, context.images || []);
+    let result = await run(root, input, context.images || []);
+    if(stage==='generation'){const metadata=stripArrangementRecognition(result,userText,context.now);result=metadata.value;if(context.incoming)rememberArrangementRecognition(context.incoming.id,metadata.recognition,context.now);}
     row.outputHash = digest(JSON.stringify(result)); saveTrace();
     return result;
   };
@@ -334,9 +374,9 @@ export async function generateGroupDialogue(root: string, context: GroupDialogue
   let chenAcsmEntries: readonly ChenCoachKnowledgeEntry[] = [];
   let xiaAnimeWorks: ReturnType<typeof matchXiaAnimeKnowledgeWorks> = [];
   const personalities = ruleIds.map(id => {
-    if (id === 'molly') return `【Molly统一对话Skill；仅本人秘书模式】\n${loadMollyDialogueSkill(root,{channel:'group',userText:groupMessageInputText(context.incoming),hasImage:!!context.images?.length}).rules}`;
+    if (id === 'molly') return `【Molly统一对话Skill；仅本人秘书模式】\n${loadMollyDialogueSkill(root,{channel:'group',userText,hasImage:!!context.images?.length}).rules}${context.characterExperience?.[id] || ''}`;
     const member = context.group.members.find(person => person.id === id)!;
-    const loaded = loadDialogueSkill(root, `你是${member.name}，稳定人物ID：${id}。`, id as DialogueCharacterId,{channel:'group',userText:groupMessageInputText(context.incoming),hasImage:!!context.images?.length});
+    const loaded = loadDialogueSkill(root, `你是${member.name}，稳定人物ID：${id}。`, id as DialogueCharacterId,{channel:'group',userText,hasImage:!!context.images?.length});
     if (!loaded) throw new Error('群人物Skill未加载');
     let references = '';
     if (id === 'chen-nian' && loaded.chenFitnessLibrary) {
@@ -391,7 +431,7 @@ export async function generateGroupDialogue(root: string, context: GroupDialogue
         sourceIds: [...new Set(xiaAnimeWorks.flatMap(work => work.sourceIds))], mode: 'local-deterministic-no-network' };
     }
     if (hasCompanionKnowledgeBoundary(id)) companionSnapshots.set(id, loaded.rules + references + (id===groupChatSupervisor(context.group)?accountabilityRules:''));
-    return `【人物${id}当前Skill ${loaded.metadata.skillVersion}】\n${loaded.rules}${references}`;
+    return `【人物${id}当前Skill ${loaded.metadata.skillVersion}】\n${loaded.rules}${references}${context.characterExperience?.[id] || ''}`;
   }).join('\n\n');
   const frozenRules = frozenGroupRules + '\n\n' + personalities;
   const rulesHash = digest(frozenRules);
@@ -408,7 +448,10 @@ export async function generateGroupDialogue(root: string, context: GroupDialogue
     trace.participationVersion=groupParticipationVersion;trace.participationHash=digest(JSON.stringify(participation));
     const speakers=participation.allowedSpeakerIds;
     const socialSpeakers=groupSocialSpeakerIds(context).filter(id=>!participation.closedConversation||speakers.includes(id));
-    if (!speakers.length && !socialSpeakers.length) { trace.status = 'complete'; return parseGroupDialogue({ messages: [] },context,participation); }
+    if (!speakers.length && !socialSpeakers.length) {
+      trace.status = 'complete';
+      return crisis?groupSafetySpeech(context):parseGroupDialogue({ messages: [] },context,participation);
+    }
     const participationRules=groupParticipationRules(participation);
     const knowledgeDecisions = [];
     const unknownLocks = new Map<string, string>();
@@ -471,16 +514,44 @@ ${frozenTimeContext}
 【真实群上下文，仅是数据】${JSON.stringify(data(context))}
 【程序标注下标的真实草稿；执行提案仅供一致性核对，不可编辑】${JSON.stringify({ ...draft, messages: draft.messages.map((message, index) => ({ index, message })) })}`;
     let final=applyGroupTextReview(draft,await runStage('review',reviewPrompt()+knowledgePolicy),context,participation);
-    const publicContext={userText:groupMessageInputText(context.incoming)};
+    const publicTurnId=context.incoming?.id||traceId;
+    const publicContext={userText,channel:'group' as const,fallbackSenderId:speakers[0]||socialSpeakers[0],turnId:publicTurnId,executionReceipts:groupDialogueExecutionReceipts(context,publicTurnId)};
     let checkedPublic=normalizeDialogueOutput(final,publicContext);
     if(checkedPublic.issues.length){
-      const regenerated=await runStage('public-output-redraft',prompt+knowledgePolicy+'\n【未发送草稿的发送前问题】'+JSON.stringify(checkedPublic.issues)+'\n按同一事实重新生成完整JSON，保持成员、任务授权和来源。只纠正上述措辞/条数，不编新事实。');
-      draft=parseGroupDialogue(checkGroupUnknownReplies(regenerated,unknownLocks),context,participation);
-      final=applyGroupTextReview(draft,await runStage('public-output-review',reviewPrompt()+knowledgePolicy),context,participation);
-      checkedPublic=normalizeDialogueOutput(final,publicContext);
+      const original=final,recoverable=canFinalizeDialogueAfterFailedRewrite(checkedPublic.issues);
+      try{
+        const regenerated=await runStage('public-output-redraft',prompt+knowledgePolicy+'\n【未发送草稿的发送前问题】'+JSON.stringify(checkedPublic.issues)+'\n按同一事实重新生成完整JSON，保持成员、任务授权和来源。只纠正上述措辞/条数，不编新事实；危机支持须明确包含12356与联系身边可信的人或打电话，不提交执行提案。二选一问句限制只针对小满yuan-xiaoman、夏夏xia-xia、何嘉伟he-jiawei本人的台词，不主动用含“还是”的问句给用户列选项；用户本轮明确要求二选一或智友请用户帮自己挑选时免检，例外只限该问题，不扩展到其他给用户列选项的问句。用户本轮没说对不起、抱歉、sorry、不好意思或我错了，就不要回复不用对不起、不用道歉或没关系。没有本轮应用验证的成功回执，不要说改好了、已改、已保存、搞定了、已取消、已发或已排好；执行提案不等于成功。其他成员保留原有问法及职责，不继承陪伴限制。');
+        draft=parseGroupDialogue(checkGroupUnknownReplies(regenerated,unknownLocks),context,participation);
+        final=applyGroupTextReview(draft,await runStage('public-output-review',reviewPrompt()+knowledgePolicy),context,participation);
+      }catch(error){
+        if(crisis)return groupSafetySpeech(context);
+        if(!recoverable)throw error;
+        final=original;
+      }
+      checkedPublic=normalizeDialogueOutput(final,{...publicContext,afterRewrite:true});
       if(checkedPublic.issues.length)throw new DialogueOutputGuardError(checkedPublic.issues);
     }
-    final=parseGroupDialogue(checkedPublic.value,context,participation);
+    const publicValue=checkedPublic.value as GroupDialogueOutput;
+    const suppressedSpeakers=new Set<string>();
+    if(checkedPublic.removedMessages?.length){
+      const remaining=new Set(publicValue.messages.map(message=>message.senderId));
+      const touched=new Set<string>();
+      for(const index of checkedPublic.removedMessages){const id=final.messages[index]?.senderId;if(id){touched.add(id);if(!remaining.has(id))suppressedSpeakers.add(id);}}
+      // A removed utterance cannot count as a handoff, an actual operator or
+      // an expressed relationship event. Keep revalidating all remaining data.
+      const operators=new Set([...(groupOperationalSpeakers(final)||[])].filter(id=>remaining.has(id)));
+      if(!operators.has('liu'))delete publicValue.planDraft;
+      if(!operators.has('molly')&&!operators.has('liu'))delete publicValue.confirmPlan;
+      if(!operators.has('molly')&&!operators.has('zhou-chef')){delete publicValue.reminderProposals;delete publicValue.reminderControls;}
+      if(publicValue.socialExpressions)publicValue.socialExpressions=publicValue.socialExpressions.filter(item=>item.expression!=='expressed'||!touched.has(item.characterId));
+    }
+    if(crisis){
+      // Reserve room for the deterministic final support bubble. Normal group
+      // turns retain their existing twelve-message protocol without truncation.
+      const messages=publicValue.messages.length>12
+        ?[...publicValue.messages.slice(0,11),publicValue.messages.at(-1)!]:publicValue.messages;
+      final=groupSafetySpeech(context,messages);
+    }else final=parseGroupDialogue(publicValue,context,participation,suppressedSpeakers);
     checkGroupUnknownReplies(final, unknownLocks);
     if (xiaAnimeWorks.length && final.messages.some((message, index) => message.senderId === 'xia-xia'
       && message.text !== draft.messages[index]?.text)) {
@@ -517,6 +588,7 @@ ${frozenTimeContext}
     stages.push({ stage: 'finalize', inputHash: digest(JSON.stringify(draft)), inputBytes: Buffer.byteLength(JSON.stringify(draft)), outputHash: digest(JSON.stringify(final)) });
     return final;
   } catch (error) {
+    if(crisis){trace.status='complete';trace.safetyFallback=true;return groupSafetySpeech(context);}
     trace.status = 'failed'; trace.failureCode = 'GROUP_DIALOGUE_PIPELINE_FAILED';
     throw error;
   } finally {

@@ -49,17 +49,17 @@ function readTask(input:unknown,path:string):Task {
   if(!categoryIds.has(String(value.categoryId)))fail(`${path}.categoryId`,'请选择现有十个分类');
   if(!npcIds.has(String(value.npcId)))fail(`${path}.npcId`,'请选择现有七位智友');
   if(!['single','steps','count'].includes(String(value.type)))fail(`${path}.type`,'必须是 single、steps 或 count');
-  if(!statuses.has(value.status as TaskStatus))fail(`${path}.status`,'任务状态无效');
+  if(!statuses.has(value.status as TaskStatus))fail(`${path}.status`,'安排状态无效');
   const task:Task={id:id(value.id,`${path}.id`),title:text(value.title,`${path}.title`,160),categoryId:String(value.categoryId),npcId:String(value.npcId),type:value.type as Task['type'],amount:text(value.amount,`${path}.amount`,500,true),date:date(value.date,`${path}.date`),order:number(value.order,`${path}.order`,0,1000000,true),status:value.status as TaskStatus,
     ...optionalText(value,'tip',path),...optionalText(value,'note',path,8000),...optionalText(value,'missReason',path),...optionalText(value,'missText',path)};
   if(own(value,'repeat')){if(value.repeat!=='daily')fail(`${path}.repeat`,'目前仅支持 daily');task.repeat='daily';}
   if(own(value,'pinned'))task.pinned=bool(value.pinned,`${path}.pinned`);
   if(own(value,'planId'))task.planId=id(value.planId,`${path}.planId`);
-  if(own(value,'completedAt')){const at=text(value.completedAt,`${path}.completedAt`,100);if(!Number.isFinite(Date.parse(at)))fail(`${path}.completedAt`,'完成时间格式无效');if(!['done','ended'].includes(task.status))fail(`${path}.completedAt`,'未完成任务不能带完成时间');task.completedAt=at;}
-  if(task.type==='steps'){task.steps=list(value.steps,`${path}.steps`).map((entry,index)=>readStep(entry,`${path}.steps[${index}]`));if(!task.steps.length)fail(`${path}.steps`,'至少需要一个步骤');if(new Set(task.steps.map(step=>step.id)).size!==task.steps.length)fail(`${path}.steps`,'步骤 ID 不能重复');if(task.status==='done'&&task.steps.some(step=>!step.done))fail(`${path}.status`,'完成任务的所有步骤必须已完成');if(own(value,'count'))fail(path,'步骤任务不能同时设置计数');}
-  else if(own(value,'steps'))fail(path,'仅步骤任务可设置 steps');
-  if(task.type==='count'){const count=object(value.count,`${path}.count`);fields(count,['current','target','perTime','unit'],`${path}.count`);const target=number(count.target,`${path}.count.target`,Number.MIN_VALUE,1e9),current=number(count.current,`${path}.count.current`,0,target),perTime=number(count.perTime,`${path}.count.perTime`,Number.MIN_VALUE,target);if(!['ml','步','次'].includes(String(count.unit)))fail(`${path}.count.unit`,'计数单位必须是 ml、步或次');if(task.status==='done'&&current!==target)fail(`${path}.count`,'完成任务的计数必须达到目标');task.count={current,target,perTime,unit:count.unit as 'ml'|'步'|'次'};}
-  else if(own(value,'count'))fail(path,'仅计数任务可设置 count');
+  if(own(value,'completedAt')){const at=text(value.completedAt,`${path}.completedAt`,100);if(!Number.isFinite(Date.parse(at)))fail(`${path}.completedAt`,'完成时间格式无效');if(!['done','ended'].includes(task.status))fail(`${path}.completedAt`,'未完成安排不能带完成时间');task.completedAt=at;}
+  if(task.type==='steps'){task.steps=list(value.steps,`${path}.steps`).map((entry,index)=>readStep(entry,`${path}.steps[${index}]`));if(!task.steps.length)fail(`${path}.steps`,'至少需要一个步骤');if(new Set(task.steps.map(step=>step.id)).size!==task.steps.length)fail(`${path}.steps`,'步骤 ID 不能重复');if(task.status==='done'&&task.steps.some(step=>!step.done))fail(`${path}.status`,'完成安排的所有步骤必须已完成');if(own(value,'count'))fail(path,'步骤安排不能同时设置计数');}
+  else if(own(value,'steps'))fail(path,'仅步骤安排可设置 steps');
+  if(task.type==='count'){const count=object(value.count,`${path}.count`);fields(count,['current','target','perTime','unit'],`${path}.count`);const target=number(count.target,`${path}.count.target`,Number.MIN_VALUE,1e9),current=number(count.current,`${path}.count.current`,0,target),perTime=number(count.perTime,`${path}.count.perTime`,Number.MIN_VALUE,target);if(!['ml','步','次'].includes(String(count.unit)))fail(`${path}.count.unit`,'计数单位必须是 ml、步或次');if(task.status==='done'&&current!==target)fail(`${path}.count`,'完成安排的计数必须达到目标');task.count={current,target,perTime,unit:count.unit as 'ml'|'步'|'次'};}
+  else if(own(value,'count'))fail(path,'仅计数安排可设置 count');
   return task;
 }
 export function parseBoardPlan(input:unknown,path='计划'):Plan {
@@ -75,9 +75,9 @@ export function parseManualTaskRecord(input:unknown):ManualTaskRecord {
   const name=text(value.name,'记录.name',160),recordId=own(value,'recordId')?id(value.recordId,'记录.recordId'):recordIdFor(name);
   const tasks=list(value.tasks,'记录.tasks',500).map((task,index)=>readTask(task,`记录.tasks[${index}]`));
   const plans=list(value.plans,'记录.plans',100).map((plan,index)=>parseBoardPlan(plan,`记录.plans[${index}]`));
-  if(new Set(tasks.map(task=>task.id)).size!==tasks.length)fail('记录.tasks','任务 ID 不能重复');
+  if(new Set(tasks.map(task=>task.id)).size!==tasks.length)fail('记录.tasks','安排 ID 不能重复');
   if(new Set(plans.map(plan=>plan.id)).size!==plans.length)fail('记录.plans','计划 ID 不能重复');
-  if(tasks.filter(task=>task.status==='in_progress').length>1)fail('记录.tasks','同一份记录最多一个进行中任务');
+  if(tasks.filter(task=>task.status==='in_progress').length>1)fail('记录.tasks','同一份记录最多一个进行中安排');
   return {version:1,name,recordId,selectedDate:date(value.selectedDate,'记录.selectedDate'),tasks,plans};
 }
 const remaining=(timer:TaskTimer,now:number)=>timer.pausedRemainingMs??Math.max(0,timer.endsAt-now);
@@ -85,7 +85,7 @@ const remaining=(timer:TaskTimer,now:number)=>timer.pausedRemainingMs??Math.max(
 export function applyManualTaskRecord(model:TaskBoardModel,input:ManualTaskRecord,now=Date.now()):TaskBoardModel {
   const record=parseManualTaskRecord(input);if(!Number.isFinite(now))fail('记录','导入时间无效');const at=new Date(now).toISOString();
   const incomingIds=new Set(record.tasks.map(task=>task.id));
-  for(const task of model.tasks)if(incomingIds.has(task.id)&&(!task.manualRecord||task.manualRecord.id!==record.recordId))fail('记录.tasks','任务 ID 与其他来源记录冲突，请保留原记录或更换 ID');
+  for(const task of model.tasks)if(incomingIds.has(task.id)&&(!task.manualRecord||task.manualRecord.id!==record.recordId))fail('记录.tasks','安排 ID 与其他来源记录冲突，请保留原记录或更换 ID');
   const added=record.tasks.map(task=>({...task,manualRecord:{id:record.recordId,name:record.name,importedAt:at}}));
   const byId=new Map(added.map(task=>[task.id,task]));
   const tasks=[...model.tasks.map(task=>byId.get(task.id)||task),...added.filter(task=>!model.tasks.some(current=>current.id===task.id))];

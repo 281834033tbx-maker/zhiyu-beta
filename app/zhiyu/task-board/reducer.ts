@@ -1,5 +1,6 @@
 import {createHistoryDay,createMockTaskBoard,shiftMockDate} from './mock';
 import {applyManualTaskRecord,boardShanghaiToday,isBoardDate,parseBoardPlan} from './manual-task-record';
+import {validContentResetAt} from '../../../lib/npc/content-reset';
 import type {Task,TaskBoardAction,TaskBoardModel,TaskTimer} from './types';
 
 export const HISTORY_MOCK_LIMIT_DAYS=365;
@@ -85,8 +86,10 @@ export function taskBoardReducer(model:TaskBoardModel,action:TaskBoardAction):Ta
     }
     case 'delete-plan':return {...model,plans:(model.plans||[]).filter(plan=>plan.id!==action.planId)};
     case 'enable-live-import':return model.liveImport||!Number.isFinite(new Date(action.now).getTime())?model:{...model,liveImport:{since:timestamp(action.now)}};
-    case 'import-tasks': {
-      const since=Date.parse(model.liveImport?.since||'');
+    case 'import-tasks':
+    case 'import-arrangement-records': {
+      const historical=action.type==='import-arrangement-records';
+      const since=historical?(validContentResetAt(model.contentResetAt)?model.contentResetAt:0):Date.parse(model.liveImport?.since||'');
       if(!Number.isFinite(since))return model;
       const keys=new Set(model.tasks.flatMap(task=>task.source?[task.source.key]:[]));
       const ids=new Set(model.tasks.map(task=>task.id));
@@ -104,7 +107,7 @@ export function taskBoardReducer(model:TaskBoardModel,action:TaskBoardAction):Ta
         // must neither drop a different source nor replace an existing row.
         while(ids.has(id))id=`${task.id.slice(0,110)}-${++collision}`;
         order++;
-        added.push({...structuredClone(task),id,date:model.today,order,appendOrder:order,pinned:undefined});
+        added.push({...structuredClone(task),id,date:historical?task.date:model.today,order,appendOrder:order,pinned:undefined});
         keys.add(source.key);ids.add(id);
       }
       return added.length?{...model,tasks:[...model.tasks,...added]}:model;

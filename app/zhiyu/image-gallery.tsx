@@ -5,6 +5,7 @@ import {createContext, useContext, useEffect, type ReactNode} from 'react';
 import {assets, type ChatMessage} from '../../lib/npc/contracts';
 import type {ImageViewerPayload, ViewerImage} from './desktop-bridge';
 import {MobileComposerContext} from './mobile-composer-context';
+import {TEAM_CARD_IMAGE,TEAM_CARD_LABEL} from '../../lib/npc/team-card';
 
 type Gallery = {conversationId:string; images:ViewerImage[]};
 const GalleryContext = createContext<Gallery|null>(null);
@@ -13,6 +14,8 @@ export const useImageGallery = () => useContext(GalleryContext);
 export function chatGallery(messages:ChatMessage[], npcName:string):ViewerImage[] {
   return messages.flatMap(message => {
     const part = message.part;
+    if(part.type==='team_card')return [{id:message.id,src:TEAM_CARD_IMAGE,alt:TEAM_CARD_LABEL,
+      at:message.at,sender:message.role==='user'?'你':npcName}];
     const src = message.legacyContent?.image || (part.type === 'generated_photo' ? (part.status === 'ready' ? part.url : null)
       : part.type === 'upload' ? part.url : 'assetId' in part ? assets[part.assetId].url : null);
     if (!src) return [];

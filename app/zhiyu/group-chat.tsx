@@ -17,6 +17,7 @@ import InlineNameEdit from './inline-name-edit';
 import GroupChatSearch from './group-chat-search';
 import GroupMemberStack from './group-member-stack';
 import MessageActions from './message-actions';
+import {ArrangementMessage} from './arrangement-message';
 import {hideMessage, useMessageVisibility} from './message-visibility';
 import type {DisplayPet} from './pet-storage';
 import {bubblePosition} from './message-bubbles';
@@ -105,7 +106,7 @@ function mentionQueryAt(text: string, caret: number): MentionQuery | null {
 
 function groupEventLabel(message: GroupMessage) {
   const labels = {'plan-confirmed': '确认了一周计划', 'reminder-confirmed': '确认了提醒安排', 'reminder-paused': '暂停了提醒', 'reminder-resumed': '恢复了提醒', 'reminder-cancelled': '取消了提醒'};
-  return message.event ? labels[message.event.kind] : '更新了群任务';
+  return message.event ? labels[message.event.kind] : '更新了群安排';
 }
 
 function groupMessageText(message: GroupMessage) {
@@ -430,7 +431,7 @@ function GroupChatPanelContent({accountId, group, companion, onRename, onSend, o
     if (!requestId) {requestId = crypto.randomUUID(); controlRequestIds.current.set(key, requestId);}
     controlLock.current = true; setControlBusy(key); setControlError('');
     try {await task(requestId); controlRequestIds.current.delete(key);}
-    catch (error) {if (active.current) setControlError(reportUserFacingError(error,'save','保存群任务'));}
+    catch (error) {if (active.current) setControlError(reportUserFacingError(error,'save','保存群安排'));}
     finally {controlLock.current = false; if (active.current) setControlBusy('');}
   }
   const planComplete = group.plan?.days.length === 7 && group.plan.days.every((day, index, days) => validCalendarDate(day.date) && (index === 0 || Date.parse(day.date) - Date.parse(days[index - 1].date) === 86400000) && !!day.label?.trim() && !!day.breakfast?.trim() && !!day.lunch?.trim() && !!day.dinner?.trim());
@@ -556,8 +557,9 @@ function GroupChatPanelContent({accountId, group, companion, onRename, onSend, o
                 const quote = original ? item.quote || {id: original.id, senderName: original.senderName, text: groupMessageText(original)} : undefined;
                 return <div key={item.id} className={`xx-message ${locatedMessage?.id === item.id ? 'is-located' : ''}`} data-message-id={item.id} data-bubble-position={bubblePosition(index > 0 && item.type === 'text' && block[index - 1].type === 'text', index < block.length - 1 && item.type === 'text' && block[index + 1].type === 'text')}>
                   {quote && <button type="button" className="npc-quote zy-group-message-quote" onClick={() => locateMessage(quote.id)}><strong>{quote.senderName}</strong><span>{quote.text}</span></button>}
-                  <RetryableMessage failed={item.id===lastUserMessageId&&!!group.error&&!group.pending&&replyRetry.attempted&&!replyRetry.pending} disabled={!!group.pending||replyRetry.pending} label="重新回复这条群消息" onRetry={()=>void retryReply()}><MessageActions text={groupMessageText(item)} voice={item.type === 'voice'} voiceSrc={item.part?.type==='voice'?item.part.url:undefined} voiceTranscript={item.part?.type==='voice'?item.part.text:item.text} accountId={accountId} onQuote={() => quoteMessage(item)} onDelete={() => deleteMessage(item)} onForward={onForward ? () => onForward(item.text || '') : undefined}><div className="xx-bubble zy-group-message-bubble"><GroupMessageBody message={item} members={historicalMembers} displayNames={displayNames}/></div></MessageActions></RetryableMessage>
+                  <RetryableMessage failed={item.id===lastUserMessageId&&!!group.error&&!group.pending&&replyRetry.attempted&&!replyRetry.pending} disabled={!!group.pending||replyRetry.pending} label="重新回复这条群消息" onRetry={()=>void retryReply()}><MessageActions text={groupMessageText(item)} voice={item.type === 'voice'} voiceSrc={item.part?.type==='voice'?item.part.url:undefined} voiceTranscript={item.part?.type==='voice'?item.part.text:item.text} accountId={accountId} onQuote={() => quoteMessage(item)} onDelete={() => deleteMessage(item)} onForward={onForward ? () => onForward(item.text || '') : undefined}>{(!item.arrangementOffer||!!item.text)&&<div className="xx-bubble zy-group-message-bubble"><GroupMessageBody message={item} members={historicalMembers} displayNames={displayNames}/></div>}</MessageActions></RetryableMessage>
                   {record&&item.recordAction==='order-change'&&<DemoOrderChangeCard confirmed={record.orderChange==='confirmed'} busy={controlBusy==='record-order'} error={controlError} onConfirm={()=>{if(onConfirmRecordOrder)void controlTask('record-order',onConfirmRecordOrder);}}/>}
+                  {!mine&&<ArrangementMessage message={item} disabled={sending||!!group.pending}/>}
                 </div>;
               })}
             </div>

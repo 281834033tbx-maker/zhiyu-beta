@@ -6,7 +6,7 @@ import type {Page,Person} from './data';
 import {bounceMobileIcon} from './mobile-effects';
 
 const keys:Page[]=['chat','contacts','tasks','moments','me'];
-const labels=['消息','通讯录','任务','动态','我'];
+const labels=['消息','通讯录','安排','动态','我'];
 export default function MobileNavigation({page,self,unread,tasks,moments,hidden,onNavigate}:{page:Page;self:Person;unread:number;tasks:boolean;moments:boolean;hidden:boolean;onNavigate:(page:Page)=>void}) {
  const [scrollState,setScrollState]=useState({page,hidden,collapsed:false}),[flow,setFlow]=useState<{from:number;to:number;key:number}|null>(null);
  if(scrollState.page!==page||scrollState.hidden!==hidden)setScrollState({page,hidden,collapsed:false});
@@ -81,7 +81,7 @@ export default function MobileNavigation({page,self,unread,tasks,moments,hidden,
  const select=(next:Page)=>{const element=nav.current;if(element&&next!==page){const buttons=element.querySelectorAll<HTMLButtonElement>('button'),box=element.getBoundingClientRect(),a=buttons[keys.indexOf(page)]?.getBoundingClientRect(),b=buttons[keys.indexOf(next)]?.getBoundingClientRect();if(a&&b)setFlow({from:a.x+a.width/2-box.x-15,to:b.x+b.width/2-box.x-15,key:(flow?.key||0)+1});}onNavigate(next);};
  return <nav ref={nav} className={'zy-mobile-nav'+(collapsed?' is-collapsed':'')} aria-label="主导航">
   {flow&&<i key={flow.key} className="zy-mobile-nav-flow" aria-hidden="true" style={{'--zy-m-nav-from':flow.from+'px','--zy-m-nav-to':flow.to+'px'} as CSSProperties}/>}
-  <div className="zy-mobile-nav-items">{keys.map((key,i)=>{const active=key===page,notice=key==='chat'&&unread>0?`${unread}条未读消息`:key==='tasks'&&tasks?'有正在进行的任务':key==='moments'&&moments?'有新动态':'';const Icon=[MessageSquare,Users,CalendarCheck,Compass][i];return <button type="button" key={key} data-nav-key={key} className={active?'is-active':''} aria-label={labels[i]+(notice?'，'+notice:'')} aria-current={active?'page':undefined} onClick={event=>{bounceMobileIcon(event.currentTarget);select(key);}}>
+  <div className="zy-mobile-nav-items">{keys.map((key,i)=>{const active=key===page,notice=key==='chat'&&unread>0?`${unread}条未读消息`:key==='tasks'&&tasks?'有正在进行的安排':key==='moments'&&moments?'有新动态':'';const Icon=[MessageSquare,Users,CalendarCheck,Compass][i];return <button type="button" key={key} data-nav-key={key} className={active?'is-active':''} aria-label={labels[i]+(notice?'，'+notice:'')} aria-current={active?'page':undefined} onClick={event=>{bounceMobileIcon(event.currentTarget);select(key);}}>
    {key==='me'?<span className="zy-mobile-nav-avatar" data-mobile-bounce-icon>{self.avatar?<img src={self.avatar} alt=""/>:<span>{(self.nickname||self.name).slice(0,1)}</span>}</span>:<Icon size={24} strokeWidth={1.8} fill={active?'currentColor':'none'}/>}
    {key==='chat'&&unread>0&&<span key={unread} className="zy-mobile-nav-unread">{unread>99?'99+':unread}</span>}
    {(key==='tasks'&&tasks||key==='moments'&&moments)&&<i className="zy-mobile-nav-dot"/>}

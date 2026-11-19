@@ -3,6 +3,7 @@
 import { useContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X, Reply, RotateCcw } from 'lucide-react';
 import MessageReceipt, {messagesHaveReadReceipt} from './message-receipt';
+import TeamCard from './team-card';
 import {
   assets,
   type Part,
@@ -16,6 +17,7 @@ import { useChatView } from './chat-view-store';
 import ChatImage from './chat-image';
 import ChatImagePlaceholder from './chat-image-placeholder';
 import NpcContactCard from './npc-contact-card';
+import {ArrangementMessage} from './arrangement-message';
 import {ImageGallery,chatGallery} from './image-gallery';
 import MessageActions from './message-actions';
 import {hideMessage, useMessageVisibility} from './message-visibility';
@@ -81,13 +83,14 @@ export function useExclusiveChatReference({taskPageContext,taskPageContextKey,re
 
 function TaskMessage({taskId,onOpen}:{taskId:string;onOpen?:(taskId:string)=>void}){const {account}=useAccount();return <ProfessionalTaskCard accountId={account.id} taskId={taskId} onOpen={onOpen}/>;}
 export function NpcPart({ part, characterId, onRetry, messageId, onOpenTask, onOpenNpc, onOpenChoice, onChoose, pendingIndex, choiceDisabled, choiceError }: { part: Part; characterId?:string; onRetry?:()=>void; messageId?:string; onOpenTask?:(taskId:string)=>void; onOpenNpc?:(id:string,quoteId?:string,prefill?:string)=>void; onOpenChoice?:(messageId:string)=>void; onChoose?:ChoiceChatProps['onChoose']; pendingIndex?:number; choiceDisabled?:boolean; choiceError?:string }) {
+  if(part.type==='team_card')return <TeamCard messageId={messageId}/>;
   if(part.type==='daily_brief')return messageId?<DailyBriefCard messageId={messageId} brief={part.brief} onOpenNpc={onOpenNpc} onOpenChoice={onOpenChoice}/>:null;
   if(part.type==='weekly_report')return messageId?<WeeklyReportCard messageId={messageId} report={part.report} onOpenNpc={onOpenNpc}/>:null;
   if(part.type==='secretary_report')return <SecretaryReportCard report={part.report} onOpenNpc={onOpenNpc}/>;
   if(part.type==='city_request')return <CityRequest text={part.text}/>;
   if(part.type==='choice')return <ChoiceChat part={part} characterId={characterId} onChoose={onChoose} pendingIndex={pendingIndex} disabled={choiceDisabled} error={choiceError}/>;
   if(part.type==='professional_task')return characterId&&!allowsCharacterChoice(characterId)
-    ? <div className="xx-bubble">历史任务消息</div>
+    ? <div className="xx-bubble">历史安排消息</div>
     : <TaskMessage taskId={part.taskId} onOpen={onOpenTask}/>;
   if(part.type==='voice')return part.status==='ready'&&part.url?<div className="xx-bubble xx-bubble-voice"><VoiceBubble src={part.url} durationSeconds={part.durationSeconds} transcript={part.text}/></div>:part.status==='failed'?<button type="button" className="zy-voice-retry" disabled={!onRetry} onClick={onRetry}>语音没发出去，点一下重发</button>:<output className="xx-bubble zy-voice-placeholder" aria-label="语音正在准备"><i aria-hidden="true"/><i aria-hidden="true"/><i aria-hidden="true"/></output>;
   if(part.type==='generated_photo')return <figure className="xx-media generated-photo">{part.status==='ready'&&part.url?.trim()?<><ChatImage messageId={messageId} src={part.url} alt={`${people.find(person=>person.id===characterId)?.name||'智友'}发的照片`}/>{part.caption&&<div className="xx-bubble xx-media-caption">{part.caption}</div>}</>:part.status==='failed'?<ChatImagePlaceholder label="图片没发出去" onRetry={onRetry}/>:part.status==='ready'?<ChatImagePlaceholder/>:<output className={'generated-photo-placeholder '+part.status} aria-label="正在准备图片" aria-busy="true"><LoadingSkeleton label="正在准备图片" variant="media"/></output>}</figure>;
@@ -127,8 +130,9 @@ function searchMessageText(message:ChatMessage,tasks:readonly ProfessionalTask[]
   const part=message.part;
   let text:string;
   switch(part.type){
+    case 'team_card':text='[图片]';break;
     case 'choice':text=choicePlainText(part);break;
-    case 'professional_task':text='[任务] '+(tasks.find(task=>task.id===part.taskId)?.title||'任务');break;
+    case 'professional_task':text='[安排] '+(tasks.find(task=>task.id===part.taskId)?.title||'安排');break;
     case 'voice':text='[语音]'+(part.text?' '+part.text:'');break;
     case 'upload':text='[图片]'+(part.text?' '+part.text:'');break;
     case 'generated_photo':text='[图片]'+(part.caption?' '+part.caption:'');break;
@@ -631,12 +635,13 @@ export default function XiaxiaChat({
                         {m.legacyContent?.image && <figure className="xx-media upload"><ChatImage messageId={m.id} src={m.legacyContent.image} alt="历史聊天图片"/></figure>}
                         {m.legacyContent?.audio && <div className="xx-bubble xx-bubble-voice"><VoiceBubble src={m.legacyContent.audio} durationSeconds={m.legacyContent.audioDurationSeconds} transcript={'text'in m.part?m.part.text:undefined}/></div>}
                         {m.legacyContent?.file && <div className="xx-bubble">{m.legacyContent.file}</div>}
-                        {(!m.legacyContent || ('text' in m.part && m.part.text)) && <NpcPart messageId={m.id} characterId={character} part={m.part} onOpenTask={setOpenTaskId} onOpenNpc={onOpenNpc} onOpenChoice={id=>{void refreshSession().then(()=>jump(id)).catch(failure=>setError(reportUserFacingError(failure,'load','打开演示选择')));}} onChoose={allowsCharacterChoice(character)&&!mirror&&!mine?index=>void choose(m,index):undefined} pendingIndex={choiceState?.key===taskScope&&choiceState.messageId===m.id?choiceState.index:undefined} choiceDisabled={mirror||mine||sending||choosing||(!data?.available&&!(m.part.type==='choice'&&m.part.reportDemoChoice))} choiceError={choiceState?.key===taskScope&&choiceState.messageId===m.id&&choiceState.error?userFacingError(choiceState.error):undefined} onRetry={()=>void retryPart(m.part,m.id)} />}
+                        {(!m.arrangementOffer||('text' in m.part&&!!m.part.text))&&(!m.legacyContent || ('text' in m.part && m.part.text)) && <NpcPart messageId={m.id} characterId={character} part={m.part} onOpenTask={setOpenTaskId} onOpenNpc={onOpenNpc} onOpenChoice={id=>{void refreshSession().then(()=>jump(id)).catch(failure=>setError(reportUserFacingError(failure,'load','打开演示选择')));}} onChoose={allowsCharacterChoice(character)&&!mirror&&!mine?index=>void choose(m,index):undefined} pendingIndex={choiceState?.key===taskScope&&choiceState.messageId===m.id?choiceState.index:undefined} choiceDisabled={mirror||mine||sending||choosing||(!data?.available&&!(m.part.type==='choice'&&m.part.reportDemoChoice))} choiceError={choiceState?.key===taskScope&&choiceState.messageId===m.id&&choiceState.error?userFacingError(choiceState.error):undefined} onRetry={()=>void retryPart(m.part,m.id)} />}
                         </MessageActions>
                         </RetryableMessage>
-                        {!mine&&m.taskLinks?.length&&onOpenTasks?<div className="xx-task-link-bubbles" aria-label="查看任务">{m.taskLinks.map(link=><button key={link.scope} type="button" className="xx-bubble xx-task-link-bubble" onClick={()=>onOpenTasks(link.scope)}><span className="xx-task-link-label">{link.label}</span></button>)}</div>:null}
+                        {!mine&&m.taskLinks?.length&&onOpenTasks?<div className="xx-task-link-bubbles" aria-label="查看安排">{m.taskLinks.map(link=><button key={link.scope} type="button" className="xx-bubble xx-task-link-bubble" onClick={()=>onOpenTasks(link.scope)}><span className="xx-task-link-label">{link.label.replace(/任务/gu,'安排')}</span></button>)}</div>:null}
                         {!mine&&m.secretaryEvent?.kind==='group'&&m.secretaryEvent.groupId&&onOpenGroup?<div className="xx-task-links"><button type="button" onClick={()=>{if(m.secretaryEvent?.groupId)onOpenGroup(m.secretaryEvent.groupId);}}>进入群聊</button></div>:null}
                         {m.recommendations?.map(candidate => <NpcContactCard key={candidate.id} candidate={candidate} onOpen={onOpenNpc}/>)}
+                        {!mine&&<ArrangementMessage message={m} disabled={sending||choosing}/>}
                       </div>
                     ))}
                   </div>
@@ -676,7 +681,7 @@ export default function XiaxiaChat({
             {userFacingErrors.network}
           </div>
         )}
-        {activeTaskPageContext&&<div className="npc-quote-draft npc-task-page-context" aria-label="当前任务上下文"><Reply size={15}/><span><strong>当前任务：{activeTaskPageContext.title}</strong><small>{activeTaskPageContext.summary.split('\n').slice(0,3).join(' · ')}</small></span><button type="button" onClick={()=>onOpenTasks?.('today')}>查看任务</button><button type="button" aria-label="取消任务上下文" onClick={onDismissTaskPageContext}><X size={16}/></button></div>}
+        {activeTaskPageContext&&<div className="npc-quote-draft npc-task-page-context" aria-label="当前安排上下文"><Reply size={15}/><span><strong>当前安排：{activeTaskPageContext.title}</strong><small>{activeTaskPageContext.summary.split('\n').slice(0,3).join(' · ')}</small></span><button type="button" onClick={()=>onOpenTasks?.('today')}>查看安排</button><button type="button" aria-label="取消安排上下文" onClick={onDismissTaskPageContext}><X size={16}/></button></div>}
         {validQuoted && <div className="npc-quote-draft"><Reply size={15}/><span><strong>回复 {validQuoted.role==='user'?'你':name}</strong><small>{validQuoted.preview}</small></span><button aria-label="取消引用" onClick={dismissQuote}><X size={16}/></button></div>}
         <ChatComposer allowImages={!textOnly} allowVoice={!textOnly} value={draft} onChange={updateTyping} onSend={send} disabled={sending || choosing || !data?.available} label={'给'+shortName+'的消息'} placeholder={`和${shortName}说点什么…`} companion={companion} aboveInput={isChef||isChen||isLiu?<ProfessionalTaskEntry accountId={account.id} characterId={character} companion={!!companion} onOpen={setOpenTaskId}/>:undefined}/>
         {searchOpen&&<GroupChatSearch name={name} entries={searchEntries} onLocate={jump} onClose={()=>setSearchOpen(false)}/>}

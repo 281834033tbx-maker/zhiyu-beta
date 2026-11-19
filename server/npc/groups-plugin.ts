@@ -1,4 +1,8 @@
+import {finishGroupArrangement} from './arrangement-dialogue';
+import {arrangementsFor} from './arrangements-plugin';
 import {persistBetaGroupPlanConfirmation} from './beta-task-events';
+import {privatePreferences} from './private-dialogue-experience';
+import {dialoguePreferenceNpcIds} from './dialogue-preferences';
 import {initBetaUsage,persistBetaGroupMessage} from './beta-usage-events';
 import {scheduleGroupDelivery,deliveryView} from '../../lib/npc/delivery';
 import type { Plugin } from 'vite';
@@ -11,12 +15,12 @@ import { groupNpcCatalog, type GroupChat, type GroupCreateInput, type GroupMembe
 import {createFridayDinnerRecord,groupForOrdinaryDialogue,isAuthoredGroupMessage,splitFridayDinnerHistory,FRIDAY_DINNER_DEMO_REQUEST,FRIDAY_DINNER_DEMO_SCENARIO} from '../../lib/npc/friday-dinner-demo';
 import {canApplyCutOpeningRecord,createCutOpeningMessages,CUT_OPENING_SCENARIO} from '../../lib/npc/cut-opening-record';
 import { nameGroupWithMolly, validGroupName, type GroupNamer } from './group-naming';
-import { generateGroupDialogue, parseGroupDialogue, groupOperationalSpeakers, groupParticipationPlan, validDate, validTime, type GroupDialogueContext, type GroupDialogueRunner, type GroupDialogueOutput } from './group-dialogue';
+import { generateGroupDialogue, parseGroupDialogue, groupOperationalSpeakers, groupParticipationPlan, groupSuppressedSpeech, validDate, validTime, type GroupDialogueContext, type GroupDialogueRunner, type GroupDialogueOutput } from './group-dialogue';
 import type { GroupParticipationPlan } from './group-routing';
 import { TaskMemoryStore } from './group-task-memory';
 import { shanghaiDate, reminderOccurrence, reminderStillCurrent, explicitTimeMatches, explicitConfirmation, reminderSuppressed } from './group-reminders';
 import { userPart } from './media';
-import { groupMediaInputs } from './group-media';
+import { groupMessageInputText, groupMediaInputs } from './group-media';
 import { observeGroupActivity,recordGroupSocialExpressions } from './social-continuity';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -676,9 +680,13 @@ export class GroupChatStore {
       }
       const media=groupMediaInputs(this.root,owner,group,incoming);
       const socialContexts=observeGroupActivity(this.db,owner,group,incoming,this.now());
-      const dialogueContext:GroupDialogueContext={ group, kind: job.kind, incoming, facts: this.taskMemory.collect(owner), reminder, now: this.now(), ...media, socialContexts };
+      const preferences=privatePreferences(this.db,this.root,this.now);
+      const characterExperience=Object.fromEntries(group.members.filter(member=>(dialoguePreferenceNpcIds as readonly string[]).includes(member.id))
+        .map(member=>[member.id,preferences.prompt(owner,member.id,{channel:'group'})]));
+      const dialogueContext:GroupDialogueContext={ group, kind: job.kind, incoming, facts: this.taskMemory.collect(owner), reminder, now: this.now(), ...media, socialContexts, characterExperience };
       const output = await this.dialogue(this.root,dialogueContext);
       const participation=groupParticipationPlan(output);
+      const speechSuppressed=groupSuppressedSpeech(output);
       if (this.closed) return;
       const fresh = this.stored(owner, groupId);
       const currentJob = this.db.prepare('SELECT status FROM npc_group_jobs WHERE seq=?').get(job.seq) as { status: string } | undefined;
@@ -710,7 +718,7 @@ export class GroupChatStore {
         fresh.messages.push({ id: this.uuid(), senderId: member.id, senderName: member.name, type: 'text', text: message.text, mentionIds: message.mentionIds, at });
         acceptedMessages.push(message);
       }
-      if (job.kind === 'opening' && acceptedMessages[0]?.senderId !== 'molly') {
+      if (job.kind === 'opening' && acceptedMessages[0]?.senderId !== 'molly'&&!speechSuppressed.has('molly')) {
         // A member change can invalidate Molly's @ assignment while leaving a
         // later NPC sentence valid. Discard that entire old opening and let
         // the same persisted job generate a fresh Molly-first introduction.
@@ -724,7 +732,7 @@ export class GroupChatStore {
       // Required replies are obligations of the current join instances. A
       // removed/rejoined actor cannot speak from an old snapshot; every still
       // present required actor must nevertheless have an accepted own reply.
-      if(participation?.requiredReplyIds.some(id=>stillJoined(id)&&!acceptedMessages.some(message=>message.senderId===id)))
+      if(participation?.requiredReplyIds.some(id=>!speechSuppressed.has(id)&&stillJoined(id)&&!acceptedMessages.some(message=>message.senderId===id)))
         throw new Error('本轮必要群回应在成员变化后未完整接受');
       const safeOutput = { ...output, messages: acceptedMessages };
       if (output.socialExpressions) safeOutput.socialExpressions=output.socialExpressions.filter(response=>stillJoined(response.characterId)
@@ -745,7 +753,7 @@ export class GroupChatStore {
       const operational=currentPlan?groupOperationalSpeakers(parseGroupDialogue({messages:acceptedMessages,
         ...(safeOutput.socialExpressions?{socialExpressions:safeOutput.socialExpressions}:{}),
       },{...dialogueContext,group:{...fresh,members:fresh.members.filter(member=>stillJoined(member.id))},
-        socialContexts:socialContexts.filter(item=>stillJoined(item.characterId)),participationPlan:currentPlan},currentPlan)):groupOperationalSpeakers(output);
+        socialContexts:socialContexts.filter(item=>stillJoined(item.characterId)),participationPlan:currentPlan},currentPlan,speechSuppressed)):groupOperationalSpeakers(output);
       // Production results carry the parser's exact at-speaking-time authority.
       // In-process injected runners are trusted, but still need a surviving
       // responsible speaker; removed actors cannot leave executable effects.
@@ -765,6 +773,9 @@ export class GroupChatStore {
       if (job.kind === 'opening') fresh.openingDone = true;
       this.db.exec('BEGIN IMMEDIATE');
       try {
+        const arrangementBefore=fresh.messages.slice(beforeMessages).map(message=>message.id).join(':');
+      if(job.kind==='message'&&incoming?.senderId==='user')finishGroupArrangement({db:this.db,store:arrangementsFor(this.root)?.using(this.db),owner,group:fresh,before:beforeMessages,incoming:groupMessageInputText(incoming),sourceId:incoming.id,turnId:incoming.id,now:this.now()});
+        if(fresh.messages.slice(beforeMessages).map(message=>message.id).join(':')!==arrangementBefore)scheduleGroupDelivery(fresh.messages,beforeMessages,Date.parse(at),this.now());
         if(safeOutput.confirmPlan&&fresh.plan?.status==='confirmed')persistBetaGroupPlanConfirmation(this.db,{owner,groupId:fresh.id,planId:fresh.plan.id,at:this.now()},()=>this.save(owner,fresh));
         else this.save(owner, fresh);
         if (incoming && safeOutput.socialExpressions?.length) recordGroupSocialExpressions(this.db,owner,groupId,incoming.id,safeOutput,this.now());

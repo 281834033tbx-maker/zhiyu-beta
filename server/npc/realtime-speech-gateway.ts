@@ -12,6 +12,8 @@ import { REALTIME_INITIAL_PAYLOAD_BYTES, REALTIME_PROVIDER_CONTEXT_TOKENS, realt
 import { RealtimeInputTranscriptAssembler } from '../../lib/npc/realtime-transcript';
 import {initBetaVoiceUsage,noteBetaVoiceReady,endBetaVoiceCall} from './beta-usage-events';
 import {isTrustedHost,isTrustedMutation,lookupBetaAccount} from './beta-identity';
+import {isDialogueCrisisInput,hasUnreceiptedCompletion} from '../../lib/npc/dialogue-output-guard';
+import {guardRealtimeSpeechText,type RealtimeTextGuardInput} from './realtime-text-guard';
 
 const CALL_PATH = '/api/npc/realtime-speech/call';
 const LOCAL_PROTOCOL = 'vite-zhiyu-realtime-v1';
@@ -40,7 +42,11 @@ export type RealtimeSpeechContext = {
 
 type GatewayOptions = {
   loadContext: (root: string, ownerId: string) => RealtimeSpeechContext | Promise<RealtimeSpeechContext>;
+  /** Synchronous trusted host refresh after current final ASR, before output. */
+  updateContextForInput?: (root:string,ownerId:string,userText:string)=>RealtimeSpeechContext;
   recordEvent?: (root: string, ownerId: string, callId: string, event: Record<string, unknown>) => void | Promise<void>;
+  /** The ordinary text runner is injectable for isolated channel tests. */
+  runTextRewrite?:RealtimeTextGuardInput['runRaw'];
 };
 
 type ActiveCall = { finish: () => void; dispose: () => void };
@@ -197,6 +203,13 @@ function attachCall(client: NodeWebSocket, root: string, ownerId: string, config
   let audioCompleted = false;
   const canceledResponses = new Set<string>();
   let dropPendingResponse = false;
+  let inputEpoch=0,responseEpoch=0,responseVersion=0;
+  let activeInputTurnId:string|undefined;
+  let completedInput:{turnId:string;text:string;epoch:number}|undefined;
+  let crisisBlockedEpoch:number|undefined;
+  let sessionRole='',sessionStyle='';
+  const pendingFinals=new Set<string>();
+  const inputAliases=new Map<string,string>();
   let finishTimer: ReturnType<typeof setTimeout> | undefined;
   let endedRecorded = false;
   let historyWarningSent = false;
@@ -268,21 +281,67 @@ function attachCall(client: NodeWebSocket, root: string, ownerId: string, config
   }, 15000);
   const startupTimer = setTimeout(() => finish('通话启动超时，请重新开始。'), 15000);
 
-  const updateAssistant = (text: string, final: boolean, turnId?: string) => {
-    if (turnId && canceledResponses.has(turnId)) return;
-    if (turnId && turnId !== responseId) {
-      responseId = turnId;
-      assistantText = '';
-      audioDelivered = false;
-      audioCompleted = false;
-      dropPendingResponse = false;
+  const rememberCanceled=(id:string)=>{
+    canceledResponses.add(id);
+    if(canceledResponses.size>64)canceledResponses.delete(canceledResponses.values().next().value!);
+  };
+  const activateInput=(turnId:string)=>{
+    if(activeInputTurnId===turnId)return;
+    activeInputTurnId=turnId;
+    inputEpoch++;responseVersion++;
+    completedInput=undefined;crisisBlockedEpoch=undefined;
+    if(responseId)rememberCanceled(responseId);
+    if(state==='speaking'||state==='thinking'){
+      dropPendingResponse=true;audioCompleted=false;
+      sendUpstream({type:'response.cancel'});
     }
-    responseId ??= randomUUID();
-    if ((turnId && canceledResponses.has(turnId)) || dropPendingResponse) return;
+    send({type:'interrupt'});record({type:'interrupt',turnId:responseId});setState('listening');
+  };
+  const beginResponse=(turnId?:string)=>{
+    if(crisisBlockedEpoch===inputEpoch||turnId&&canceledResponses.has(turnId))return false;
+    if(turnId&&turnId!==responseId){
+      if(responseId)rememberCanceled(responseId);
+      responseId=turnId;assistantText='';audioDelivered=false;audioCompleted=false;dropPendingResponse=false;
+      responseEpoch=inputEpoch;responseVersion++;
+    }
+    if(!responseId){responseId=randomUUID();responseEpoch=inputEpoch;responseVersion++;}
+    return responseEpoch===inputEpoch&&!dropPendingResponse;
+  };
+  const deliverFinal=(text:string,id:string,epoch:number,version:number,userText?:string)=>{
+    if(pendingFinals.has(id))return;
+    pendingFinals.add(id);
+    // Provider finales can repeat. Bound the dedup set to this call's recent
+    // responses; a new ASR invalidates work that is still awaiting its rewrite.
+    if(pendingFinals.size>64)pendingFinals.delete(pendingFinals.values().next().value!);
+    void guardRealtimeSpeechText({root,text,userText,turnId:id,characterId:CHARACTER,systemRole:sessionRole,speakingStyle:sessionStyle,runRaw:options.runTextRewrite}).then(result=>{
+      if(ending||disposed||epoch!==inputEpoch||version!==responseVersion||responseId!==id||canceledResponses.has(id))return;
+      assistantText=result.text;
+      const event={type:'transcript',role:'assistant',text:result.text,final:true,turnId:id};
+      send(event);record(event);
+      if(crisisBlockedEpoch===epoch)setState('listening');
+    }).catch(()=>{
+      if(ending||disposed||epoch!==inputEpoch||version!==responseVersion||responseId!==id)return;
+      send({type:'notice',message:'这句回复暂时无法显示，请再说一次。'});
+    });
+  };
+  const updateAssistant = (text: string, final: boolean, turnId?: string) => {
+    if(!beginResponse(turnId))return;
+    if (turnId && canceledResponses.has(turnId)) return;
+    if(pendingFinals.has(responseId!))return;
     assistantText = (final ? text : assistantText + text).slice(0, 12000);
+    if(final){
+      const current=completedInput?.epoch===responseEpoch?completedInput:undefined;
+      return deliverFinal(assistantText,responseId!,responseEpoch,responseVersion,current?.text);
+    }
+    // Do not briefly display an unverified “done” assertion while the final
+    // text is still awaiting its one rewrite and deterministic cleanup.
+    if(hasUnreceiptedCompletion(assistantText,{turnId:responseId}))return;
     const event = { type: 'transcript', role: 'assistant', text: assistantText, final, turnId: responseId };
     send(event);
-    if (final) record(event);
+  };
+  const rememberInputAlias=(event:Record<string,unknown>,turnId:string)=>{
+    const id=identifier(event.item_id);
+    if(id){inputAliases.set(id,turnId);if(inputAliases.size>64)inputAliases.delete(inputAliases.keys().next().value!);}
   };
 
   const onProviderEvent = (event: Record<string, unknown>) => {
@@ -320,36 +379,55 @@ function attachCall(client: NodeWebSocket, root: string, ownerId: string, config
     }
     if (type === 'conversation.item.input_audio_transcription.started') {
       const started=inputTranscripts.start(identifier(event.item_id),identifier(event.event_id));
+      rememberInputAlias(event,started.turnId);
       if(!started.fresh)return;
-      if (state === 'speaking' || state === 'thinking') {
-        if (responseId) canceledResponses.add(responseId);
-        if (canceledResponses.size > 64) canceledResponses.delete(canceledResponses.values().next().value!);
-        dropPendingResponse = true;
-        audioCompleted = false;
-        sendUpstream({ type: 'response.cancel' });
-      }
-      send({ type: 'interrupt' });
-      record({ type: 'interrupt', turnId: responseId });
-      setState('listening');
+      activateInput(started.turnId);
       return;
     }
     if (type === 'conversation.item.input_audio_transcription.delta' || type === 'conversation.item.input_audio_transcription.result') {
       const partial=inputTranscripts.update({kind:type.endsWith('.result')?'snapshot':'delta',
         itemId:identifier(event.item_id),eventId:identifier(event.event_id),text:inputTranscriptText(event)});
-      if(partial)send(partial);
+      if(partial){rememberInputAlias(event,partial.turnId);if(partial.turnId===inputTranscripts.currentTurnId)activateInput(partial.turnId);send(partial);}
       return;
     }
     if (type === 'conversation.item.input_audio_transcription.completed') {
       const completed=inputTranscripts.update({kind:'complete',itemId:identifier(event.item_id),eventId:identifier(event.event_id),
         text:inputTranscriptText(event)});
       if(!completed)return;
+      rememberInputAlias(event,completed.turnId);
       send(completed);
       record(completed);
-      if (state !== 'speaking'&&completed.turnId===inputTranscripts.currentTurnId) setState('thinking');
+      if(completed.turnId!==inputTranscripts.currentTurnId)return;
+      if(options.updateContextForInput) {
+        try {
+          const context=options.updateContextForInput(root,ownerId,completed.text);
+          sessionRole=context.systemRole;sessionStyle=context.speakingStyle;
+          const payload=sessionPayload(context,{...config,...readXiaomanRealtimeVoiceSettings(root,config.voice)});
+          // Official full-duplex protocol supports session.update during a
+          // call. Update only config, never replay dialog_context/history.
+          sendUpstream({type:'session.update',session:payload.session});
+        } catch {send({type:'notice',message:'本轮称呼与安排资料暂时未能更新，请稍后再试。'});}
+      }
+      activateInput(completed.turnId);
+      completedInput={turnId:completed.turnId,text:completed.text,epoch:inputEpoch};
+      if(isDialogueCrisisInput(completed.text)){
+        const candidate=responseEpoch===inputEpoch?assistantText:'';
+        if(responseId)rememberCanceled(responseId);
+        sendUpstream({type:'response.cancel'});
+        send({type:'interrupt'});record({type:'interrupt',turnId:responseId});
+        crisisBlockedEpoch=inputEpoch;
+        responseId=randomUUID();responseEpoch=inputEpoch;responseVersion++;
+        assistantText='';audioDelivered=false;audioCompleted=false;dropPendingResponse=true;
+        setState('thinking');
+        deliverFinal(candidate,responseId,inputEpoch,responseVersion,completed.text);
+      }else if(state!=='speaking')setState('thinking');
       return;
     }
     if (type === 'conversation.item.input_audio_transcription.failed') {
-      inputTranscripts.fail(identifier(event.item_id));
+      const itemId=identifier(event.item_id),failedTurn=itemId?(inputAliases.get(itemId)||itemId):activeInputTurnId;
+      inputTranscripts.fail(itemId);
+      if(failedTurn!==activeInputTurnId)return;
+      completedInput=undefined;inputEpoch++;responseVersion++;
       send({ type: 'notice', message: '这句话没听清，请再说一次。' });
       setState('listening');
       return;
@@ -357,21 +435,12 @@ function attachCall(client: NodeWebSocket, root: string, ownerId: string, config
     if (type === 'response.output_text.delta' && typeof event.delta === 'string') return updateAssistant(event.delta, false, turnId);
     if (type === 'response.output_text.done' && typeof event.text === 'string') return updateAssistant(event.text, true, turnId);
     if (type === 'response.output_audio.started') {
-      if (turnId && canceledResponses.has(turnId)) return;
-      if (turnId && turnId !== responseId) {
-        responseId = turnId; assistantText = ''; dropPendingResponse = false; audioDelivered = false; audioCompleted = false;
-      }
-      if ((turnId && canceledResponses.has(turnId)) || dropPendingResponse) return;
+      if(!beginResponse(turnId))return;
       setState('speaking');
       return;
     }
     if (type === 'response.output_audio.delta') {
-      if (turnId && canceledResponses.has(turnId)) return;
-      if (turnId && turnId !== responseId) {
-        responseId = turnId; assistantText = ''; dropPendingResponse = false; audioDelivered = false; audioCompleted = false;
-      }
-      if ((turnId && canceledResponses.has(turnId)) || dropPendingResponse) return;
-      responseId ??= randomUUID();
+      if(!beginResponse(turnId))return;
       if (typeof event.delta !== 'string' || event.delta.length > MAX_UPSTREAM_MESSAGE_BYTES
         || !/^[A-Za-z0-9+/]*={0,2}$/.test(event.delta) || event.delta.length % 4 !== 0) {
         return finish('实时语音音频格式异常，请重新开始。');
@@ -410,6 +479,7 @@ function attachCall(client: NodeWebSocket, root: string, ownerId: string, config
     starting = true;
     const context = await options.loadContext(root, ownerId);
     if (ending || disposed) return;
+    sessionRole=context.systemRole;sessionStyle=context.speakingStyle;
     const voiceSettings = readXiaomanRealtimeVoiceSettings(root, config.voice);
     const payload = sessionPayload(context, { ...config, ...voiceSettings });
     sentInstructionsHash = textHash(payload.session.instructions);

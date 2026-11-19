@@ -12,6 +12,8 @@ export interface Step {
 }
 export interface Task {
   id:string; title:string; categoryId:string; npcId:string; type:TaskType;
+  /** Public attribution supplied by a future professional's persisted plan. */
+  publisherName?:string; publisherAvatar?:string;
   amount:string; tip?:string; date:string; repeat?:'daily'; order:number;
   pinned?:boolean; status:TaskStatus; steps?:Step[];
   count?:{current:number; target:number; perTime:number; unit:'ml'|'步'|'次'};
@@ -53,6 +55,9 @@ export type TaskBoardAction =
   | {type:'reset'; now?:number}
   | {type:'enable-live-import'; now:number}
   | {type:'import-tasks'; tasks:Task[]}
+  /** Arrangement sections include retained historical sources without
+   * resurrecting anything older than an explicit content-reset epoch. */
+  | {type:'import-arrangement-records'; tasks:Task[]}
   | {type:'set-view'; view:TaskView}
   | {type:'set-selected-date'; date?:string}
   | {type:'import-manual-record'; record:ManualTaskRecord; now?:number}

@@ -1,5 +1,6 @@
 
 import {accountStorage,flushAccountStorage} from '../account-storage';
+import {queueReadonlyBoardSnapshot} from './readonly-sync';
 import {createEmptyTaskBoard} from './reducer';
 import {DEMO_METRICS,plans as legacyPlans} from './config';
 import {boardShanghaiToday,parseBoardPlan} from './manual-task-record';
@@ -96,6 +97,7 @@ export const mockTaskBoardSource:TaskBoardDataSource={
       const normalized={...model,today:boardShanghaiToday(),plans:model.plans||[]};
       accountStorage(accountId).setItem(taskBoardStorageKey(accountId),JSON.stringify(normalized));
       await flushAccountStorage(accountId);
+      queueReadonlyBoardSnapshot(accountId,normalized.tasks);
     }
   },
 };
